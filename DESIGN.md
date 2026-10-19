@@ -44,8 +44,9 @@ church sound mixer's line-out. It:
 phone ("captions paused — reconnecting…", "captions start from when you join") —
 never a silent wrong one (frozen captions that look live).
 
-**Out of scope for relay** (separate piece of software): the phone web app.
-relay only serves it as static files and speaks its WebSocket protocol.
+**Out of scope for relay** (separate piece of software): the phone web app —
+served by its own web server (part of that project's deployment). relay
+exposes only the WebSocket API it speaks; the app points at relay's WS URL.
 
 ## 2. Context & fixed decisions
 
@@ -144,7 +145,8 @@ thread for `cpal` callbacks).
   disconnect. One slow phone never stalls the rest.
 
 ### 4.5 `serve` — phone-facing API
-- `axum`: serves the static web app (single page), owns the phone WS protocol:
+- `axum`: owns the phone WS protocol. No static file serving — the web app is
+  deployed by its own separate web server:
   - inbound: `{ "lang": "es" }` as first message; pings.
   - outbound: `Caption` messages + honest status messages
     (`reconnecting`, `paused`, `session_ended`, `unsupported_language[...]`).
