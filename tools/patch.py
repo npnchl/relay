@@ -61,19 +61,43 @@ def slice_audio(wav: Path, window: Window, out_path: Path) -> None:
         out.writeframes(raw)
 
 
+def snap_window(utterances: list[Utterance], requested: Window) -> Window:
+    """Move window edges to sentence boundaries so no utterance is clipped.
+
+    A clipped utterance would demand words the patch audio does not
+    contain (guaranteed false diffs) and produce negative start times.
+    """
+    new_start = requested.start
+    for u in utterances:
+        if u["start"] <= new_start < u["end"]:
+            new_start = u["end"]  # skip past the straddling utterance
+    for u in utterances:
+        if u["start"] >= new_start:
+            new_start = u["start"]
+            break
+
+    new_end = requested.end
+    for u in reversed(utterances):
+        if u["start"] < new_end <= u["end"]:
+            new_end = u["start"]  # cut before the straddling utterance
+            break
+    duration = max(new_end - new_start, 1.0)
+    return Window(requested.name, new_start, duration)
+
+
 def slice_baseline(
     utterances: list[Utterance], window: Window, out_path: Path
 ) -> None:
-    sliced: list[Utterance] = []
-    for u in utterances:
-        if u["start"] < window.end and u["end"] > window.start:
-            sliced.append(
-                Utterance(
-                    start=u["start"] - window.start,
-                    end=u["end"] - window.start,
-                    text=u["text"],
-                )
-            )
+    # only fully-contained utterances: clipped edges would fake errors
+    sliced: list[Utterance] = [
+        Utterance(
+            start=u["start"] - window.start,
+            end=u["end"] - window.start,
+            text=u["text"],
+        )
+        for u in utterances
+        if u["start"] >= window.start - 0.01 and u["end"] <= window.end + 0.01
+    ]
     payload = {"result": {"transcription": {"utterances": sliced}}}
     out_path.write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -102,12 +126,16 @@ def main() -> int:
     utterances = load_baseline(args.baseline)
     args.out.mkdir(parents=True, exist_ok=True)
     for w in windows:
-        wav_out = args.out / f"{w.name}.wav"
-        base_out = args.out / f"{w.name}.baseline.json"
-        slice_audio(args.sermon, w, wav_out)
-        slice_baseline(utterances, w, base_out)
+        snapped = snap_window(utterances, w)
+        wav_out = args.out / f"{snapped.name}.wav"
+        base_out = args.out / f"{snapped.name}.baseline.json"
+        slice_audio(args.sermon, snapped, wav_out)
+        slice_baseline(utterances, snapped, base_out)
         n = len(load_baseline(base_out))
-        print(f"{w.name}: {wav_out} + baseline ({n} utterances)")
+        print(
+            f"{snapped.name}: {wav_out} "
+            f"({snapped.start:.1f}s-{snapped.end:.1f}s) + baseline ({n} utterances)"
+        )
     return 0
 
 
