@@ -215,14 +215,16 @@ def run_compare(
             continue
         differing += 1
         cand_raw = " ".join(cand_by_chunk[idx])
-        base_norm = " ".join(
-            tok for tok in normalize_words(chunk.raw)
-        )
-        cand_norm = " ".join(normalize_words(cand_raw))
+        # display both sides in the same primitive form that was compared,
+        # so visible differences are always real differences
+        base_display = " ".join(normalize_words(chunk.raw))
+        cand_display_text = " ".join(normalize_words(cand_raw))
+        base_norm = base_display
+        cand_norm = cand_display_text
         block: list[str] = [
             f"[chunk {idx + 1}] {fmt_ts(chunk.start)} - {fmt_ts(chunk.end)}",
-            f"  base : {chunk.raw}",
-            f"  cand : {cand_raw or '(nothing recognized)'}",
+            f"  base : {base_display}",
+            f"  cand : {cand_display_text or '(nothing recognized)'}",
         ]
         for op, bw, cw in diffs_by_chunk[idx]:
             if op == "sub":
