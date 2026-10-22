@@ -67,8 +67,10 @@ class CandidateWord:
 
 def normalize_words(text: str) -> list[str]:
     lowered = text.lower().replace("\u2019", "'")
-    stripped = re.sub(r"[^a-z0-9' -]+", " ", lowered)
-    return [w.strip("' -") for w in stripped.split() if w.strip("' -")]
+    # hyphens split too: "once-off" and "once off" are the same spoken phrase
+    lowered = lowered.replace("-", " ")
+    stripped = re.sub(r"[^a-z0-9' ]+", " ", lowered)
+    return [w.strip("' ") for w in stripped.split() if w.strip("' ")]
 
 
 def is_critical_word(word: str) -> bool:
