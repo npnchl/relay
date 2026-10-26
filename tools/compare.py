@@ -322,6 +322,7 @@ def run_compare(
     diffs_by_chunk: list[list[tuple[str, str, str]]] = [[] for _ in chunks]
 
     last_chunk = 0
+    base_pos = 0  # base words consumed so far; orphans sit at this position
     for edit in edits:
         if isinstance(edit, Deletion):
             ci = base_chunk[edit.base_index]
@@ -330,13 +331,22 @@ def run_compare(
                 ("del", base_tokens[edit.base_index], "")
             )
             last_chunk = ci
+            base_pos += 1
         elif isinstance(edit, Insertion):
-            ci = last_chunk
+            prev_chunk = base_chunk[base_pos - 1] if base_pos > 0 else None
+            next_chunk = base_chunk[base_pos] if base_pos < len(base_chunk) else None
+            if next_chunk is not None and next_chunk != prev_chunk:
+                # an orphan at a sentence boundary belongs with what follows
+                ci = next_chunk
+            else:
+                ci = last_chunk
             cand_by_chunk[ci].append(cand_display[edit.cand_index])
             ins[ci] += 1
             diffs_by_chunk[ci].append(
                 ("ins", "", cand_tokens[edit.cand_index])
             )
+            if next_chunk is not None:
+                last_chunk = ci
         elif isinstance(edit, Substitution):
             ci = base_chunk[edit.base_index]
             cand_by_chunk[ci].append(cand_display[edit.cand_index])
@@ -345,10 +355,12 @@ def run_compare(
                 ("sub", base_tokens[edit.base_index], cand_tokens[edit.cand_index])
             )
             last_chunk = ci
+            base_pos += 1
         else:
             ci = base_chunk[edit.base_index]
             cand_by_chunk[ci].append(cand_display[edit.cand_index])
             last_chunk = ci
+            base_pos += 1
 
     report: list[str] = []
     differing = 0
