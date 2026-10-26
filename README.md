@@ -1,4 +1,4 @@
-# nemotron-mlx-accuracy
+# transcription-accuracy
 
 Latency vs accuracy comparison for NVIDIA's
 `nemotron-speech-streaming-en-0.6b` running on Apple Silicon via

@@ -484,7 +484,7 @@ wheels = [
 ]
 
 [[package]]
-name = "nemotron-mlx-accuracy"
+name = "transcription-accuracy"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
