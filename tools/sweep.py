@@ -1,8 +1,8 @@
-"""Latency sweep: run every patch at every streaming delay, compare each
-against its solaris-3 baseline, and print the verdict table.
+"""Latency sweep: run every patch at the chosen streaming delay(s),
+compare each against its solaris-3 baseline, and print the verdict table.
 
-The question this answers: what is the fastest delay setting (80/160/560/
-1120 ms) whose accuracy does not fall apart?
+The local model serves as the free yardstick for the cloud comparison,
+so the default delay (560 ms) is its most accurate setting.
 """
 
 import argparse
@@ -14,7 +14,7 @@ from pathlib import Path
 from compare import run_compare
 from stream import run_stream
 
-DELAYS_MS: list[int] = [80, 160, 560, 1120]
+DEFAULT_DELAYS_MS: list[int] = [560]
 
 
 @dataclass(frozen=True)
@@ -48,11 +48,19 @@ def main() -> int:
     parser.add_argument("--runs", type=Path, default=Path("runs"))
     parser.add_argument("--model", default=None)
     parser.add_argument(
+        "--delays",
+        default=None,
+        help="comma-separated delay settings in ms (default: 560)",
+    )
+    parser.add_argument(
         "--report-only",
         action="store_true",
         help="reuse existing run summaries, only re-run the comparisons",
     )
     args = parser.parse_args()
+    delays: list[int] = (
+        [int(d) for d in str(args.delays).split(",")] if args.delays else DEFAULT_DELAYS_MS
+    )
 
     # only wavs that have a matching baseline are patches
     patch_names = sorted(
@@ -66,7 +74,7 @@ def main() -> int:
     for patch in patch_names:
         wav = args.patches / f"{patch}.wav"
         baseline = args.patches / f"{patch}.baseline.json"
-        for delay in DELAYS_MS:
+        for delay in delays:
             name = f"{patch}-{delay}ms"
             print(f"\n=== {name} ===", flush=True)
             if args.report_only:
@@ -114,7 +122,7 @@ def main() -> int:
     # per-delay totals for the verdict
     report.append("")
     report.append("per-delay totals across patches:")
-    for delay in DELAYS_MS:
+    for delay in delays:
         d_rows = [r for r in rows if r.delay_ms == delay]
         report.append(
             f"  {delay:>4}ms: differing {sum(r.differing for r in d_rows)}/"
