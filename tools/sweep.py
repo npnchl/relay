@@ -88,11 +88,12 @@ def main() -> int:
                     speed_x=summary.speed_x,
                     first_word_secs=summary.first_word_secs or 0.0,
                 )
+            report_path = args.runs / "reports" / patch / f"nemotron-{delay}ms.txt"
             total, differing, critical = run_compare(
                 baseline,
                 args.runs / "words" / f"{name}.words.jsonl",
                 name,
-                args.runs / "reports" / f"compare-{name}.txt",
+                report_path,
                 audio_label=patch,
             )
             rows.append(

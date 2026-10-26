@@ -14,7 +14,9 @@ solaria-3 baseline?**
 sources/   pristine originals - full-sermon.WAV + its solaris-3 transcript
 patches/   cut audio + matching baseline slices (derived, gitignored)
 runs/      outputs, organised:
-          reports/     comparison reports + sweep table (the ones you read)
+          reports/<section>/   one folder per sermon section, one report
+                               per contender inside (nemotron, speechmatics,
+                               gladia) - plus sweep-report.txt at the root
           transcripts/ plain transcripts per run
           words/       word-timing logs (input to compare.py)
           summaries/  run metrics (speed, first word)
@@ -45,7 +47,7 @@ Single runs and comparisons:
 ```bash
 uv run python tools/stream.py patches/preaching.wav --name preaching-560 --delay 560
 uv run python tools/compare.py patches/preaching.baseline.json \
-    runs/words/preaching-560.words.jsonl --name preaching-560 --out runs/reports/compare-preaching-560.txt
+    runs/words/preaching-560.words.jsonl --name preaching-560 --out runs/reports/preaching/nemotron-560.txt
 ```
 
 Type checks: `uv run mypy tools/` (strict).
