@@ -65,12 +65,116 @@ class CandidateWord:
     text: str
 
 
+# contractions expanded before possessive stripping, so "it's" never
+# loses its meaning ("it is") while "Jerusalem's" becomes "jerusalem"
+CONTRACTIONS: dict[str, list[str]] = {
+    "where's": ["where", "is"], "what's": ["what", "is"],
+    "who's": ["who", "is"], "he's": ["he", "is"], "she's": ["she", "is"],
+    "it's": ["it", "is"], "that's": ["that", "is"], "there's": ["there", "is"],
+    "how's": ["how", "is"], "what're": ["what", "are"],
+    "gonna": ["going", "to"], "wanna": ["want", "to"],
+}
+
+NUMBER_WORDS: dict[str, int] = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+    "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11,
+    "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90,
+    "hundred": 100, "thousand": 1000, "million": 1_000_000,
+}
+# spoken zero inside a number ("one oh one" == "101")
+SPOKEN_ZERO = {"oh", "o", "zero"}
+
+
+def expand_tokens(tokens: list[str]) -> list[str]:
+    out: list[str] = []
+    for tok in tokens:
+        out.extend(CONTRACTIONS.get(tok, [tok]))
+    return out
+
+
+def strip_possessives(tokens: list[str]) -> list[str]:
+    # "jerusalem's" -> "jerusalem"; trailing-apostrophe forms handled earlier
+    return [tok[:-2] if tok.endswith("'s") and len(tok) > 3 else tok for tok in tokens]
+
+
+def is_number_word(tok: str) -> bool:
+    return tok.isdigit() or tok in NUMBER_WORDS or tok in SPOKEN_ZERO
+
+
+def parse_number(run: list[str]) -> int | None:
+    """Value of a run of number words/digits, or None if not parseable."""
+    if not run:
+        return None
+    # digit strings like "2000" pass straight through
+    if len(run) == 1 and run[0].isdigit():
+        return int(run[0])
+    # digit-spelled style: "one oh one" -> 101 (all items single digits)
+    single: dict[str, str] = {
+        **{k: str(v) for k, v in NUMBER_WORDS.items() if v < 10},
+        "oh": "0", "o": "0", "zero": "0",
+    }
+    if all(w in single for w in run) and len(run) >= 2:
+        return int("".join(single[w] for w in run))
+    # value style: "two thousand" -> 2000, "twenty five" -> 25
+    total = 0
+    current = 0
+    for w in run:
+        if w.isdigit():
+            current = current * 10 + int(w) if current else int(w)
+        elif w in SPOKEN_ZERO:
+            current = current * 10 if current else 0
+        elif w in NUMBER_WORDS:
+            v = NUMBER_WORDS[w]
+            if v == 100:
+                current = max(current, 1) * 100
+            elif v >= 1000:
+                total += max(current, 1) * v
+                current = 0
+            else:
+                current += v
+        else:
+            return None
+    return total + current
+
+
+def collapse_numbers(tokens: list[str]) -> list[str]:
+    """Consecutive number words/digits become one canonical token: #<value>."""
+    out: list[str] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if run:
+            value = parse_number(run)
+            if value is not None:
+                out.append(f"#{value}")
+            else:
+                out.extend(run)
+            run.clear()
+
+    for i, tok in enumerate(tokens):
+        if tok.isdigit() or tok in NUMBER_WORDS:
+            run.append(tok)
+        elif tok in SPOKEN_ZERO and (run or (i + 1 < len(tokens) and is_number_word(tokens[i + 1]))):
+            run.append(tok)
+        else:
+            flush()
+            out.append(tok)
+    flush()
+    return out
+
+
 def normalize_words(text: str) -> list[str]:
     lowered = text.lower().replace("\u2019", "'")
     # hyphens split too: "once-off" and "once off" are the same spoken phrase
     lowered = lowered.replace("-", " ")
     stripped = re.sub(r"[^a-z0-9' ]+", " ", lowered)
-    return [w.strip("' ") for w in stripped.split() if w.strip("' ")]
+    tokens = [w.strip("' ") for w in stripped.split() if w.strip("' ")]
+    tokens = expand_tokens(tokens)
+    tokens = strip_possessives(tokens)
+    return collapse_numbers(tokens)
 
 
 def is_critical_word(word: str) -> bool:
@@ -169,6 +273,45 @@ def run_compare(
         for tok in normalize_words(w.text):
             cand_tokens.append(tok)
             cand_display.append(w.text)
+
+    # compound joins: "chat gpt" == "chatgpt" - if one side writes two
+    # adjacent tokens that the other side writes as one word, merge them
+    cand_set = set(cand_tokens)
+    merged_base: list[str] = []
+    merged_base_chunk: list[int] = []
+    i = 0
+    while i < len(base_tokens):
+        if (
+            i + 1 < len(base_tokens)
+            and base_tokens[i] + base_tokens[i + 1] in cand_set
+        ):
+            merged_base.append(base_tokens[i] + base_tokens[i + 1])
+            merged_base_chunk.append(base_chunk[i])
+            i += 2
+        else:
+            merged_base.append(base_tokens[i])
+            merged_base_chunk.append(base_chunk[i])
+            i += 1
+    base_tokens = merged_base
+    base_chunk = merged_base_chunk
+    base_set = set(base_tokens)
+    merged_cand: list[str] = []
+    merged_display: list[str] = []
+    j = 0
+    while j < len(cand_tokens):
+        if (
+            j + 1 < len(cand_tokens)
+            and cand_tokens[j] + cand_tokens[j + 1] in base_set
+        ):
+            merged_cand.append(cand_tokens[j] + cand_tokens[j + 1])
+            merged_display.append(cand_display[j] + cand_display[j + 1])
+            j += 2
+        else:
+            merged_cand.append(cand_tokens[j])
+            merged_display.append(cand_display[j])
+            j += 1
+    cand_tokens = merged_cand
+    cand_display = merged_display
 
     edits = align(base_tokens, cand_tokens)
 
