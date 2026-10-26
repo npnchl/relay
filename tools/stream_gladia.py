@@ -143,11 +143,13 @@ async def run_gladia(
 
     wall_secs = perf_counter() - start
     out_dir.mkdir(parents=True, exist_ok=True)
-    words_path = out_dir / f"{name}.words.jsonl"
+    for sub in ("words", "transcripts", "summaries"):
+        (out_dir / sub).mkdir(parents=True, exist_ok=True)
+    words_path = out_dir / "words" / f"{name}.words.jsonl"
     with words_path.open("w") as f:
         for w in words:
             f.write(json.dumps({"t": round(w.t, 3), "w": w.text}) + "\n")
-    (out_dir / f"{name}.txt").write_text(" ".join(transcript_parts))
+    (out_dir / "transcripts" / f"{name}.txt").write_text(" ".join(transcript_parts))
 
     summary = RunSummary(
         name=name,
@@ -158,7 +160,7 @@ async def run_gladia(
         first_word_secs=first_at,
         word_count=len(words),
     )
-    (out_dir / f"{name}.summary.json").write_text(
+    (out_dir / "summaries" / f"{name}.summary.json").write_text(
         json.dumps(asdict(summary) | {"speed_x": summary.speed_x}, indent=2) + "\n"
     )
     print(

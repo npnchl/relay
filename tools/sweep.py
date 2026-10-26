@@ -35,7 +35,7 @@ class RunOutcome:
 
 
 def load_outcome(runs: Path, name: str) -> RunOutcome:
-    data = json.loads((runs / f"{name}.summary.json").read_text())
+    data = json.loads((runs / "summaries" / f"{name}.summary.json").read_text())
     return RunOutcome(
         speed_x=float(data["speed_x"]),
         first_word_secs=float(data.get("first_word_secs") or 0.0),
@@ -82,9 +82,9 @@ def main() -> int:
                 )
             total, differing, critical = run_compare(
                 baseline,
-                args.runs / f"{name}.words.jsonl",
+                args.runs / "words" / f"{name}.words.jsonl",
                 name,
-                args.runs / f"compare-{name}.txt",
+                args.runs / "reports" / f"compare-{name}.txt",
                 audio_label=patch,
             )
             rows.append(
@@ -124,7 +124,7 @@ def main() -> int:
         )
     text = "\n".join(report) + "\n"
     args.runs.mkdir(parents=True, exist_ok=True)
-    (args.runs / "sweep-report.txt").write_text(text)
+    (args.runs / "reports" / "sweep-report.txt").write_text(text)
     print("\n" + text)
     return 0
 

@@ -13,7 +13,11 @@ solaria-3 baseline?**
 ```
 sources/   pristine originals - full-sermon.WAV + its solaris-3 transcript
 patches/   cut audio + matching baseline slices (derived, gitignored)
-runs/      model transcripts, word timings, comparison reports (gitignored)
+runs/      outputs, organised:
+          reports/     comparison reports + sweep table (the ones you read)
+          transcripts/ plain transcripts per run
+          words/       word-timing logs (input to compare.py)
+          summaries/  run metrics (speed, first word)
 tools/     the five tools
 ```
 
@@ -33,7 +37,7 @@ tools/     the five tools
 uv sync                                   # once
 uv run python tools/prep.py  sources/full-sermon.WAV patches/sermon-16k.wav
 uv run python tools/patch.py patches/sermon-16k.wav sources/full-sermon-transcript.json
-uv run python tools/sweep.py              # ~10 minutes; writes runs/sweep-report.txt
+uv run python tools/sweep.py              # ~10 minutes; writes runs/reports/sweep-report.txt
 ```
 
 Single runs and comparisons:
@@ -41,16 +45,16 @@ Single runs and comparisons:
 ```bash
 uv run python tools/stream.py patches/preaching.wav --name preaching-560 --delay 560
 uv run python tools/compare.py patches/preaching.baseline.json \
-    runs/preaching-560.words.jsonl --name preaching-560 --out runs/compare-preaching-560.txt
+    runs/words/preaching-560.words.jsonl --name preaching-560 --out runs/reports/compare-preaching-560.txt
 ```
 
 Type checks: `uv run mypy tools/` (strict).
 
 ## Reading the results
 
-- `runs/sweep-report.txt` — the verdict table (speed, first-word latency,
+- `runs/reports/sweep-report.txt` — the verdict table (speed, first-word latency,
   differing sentences, critical flags per patch and delay).
-- `runs/compare-<patch>-<delay>ms.txt` — the diff report for one run:
+- `runs/reports/compare-<patch>-<delay>ms.txt` — the diff report for one run:
   every sentence where the model disagrees with the baseline, the exact
   word differences, `[CRITICAL]` marks on theologically important words,
   and the audio timestamp to listen and judge.

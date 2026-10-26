@@ -159,12 +159,14 @@ def run_stream(
     wall_secs = perf_counter() - start
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    words_path = out_dir / f"{name}.words.jsonl"
+    for sub in ("words", "transcripts", "summaries"):
+        (out_dir / sub).mkdir(parents=True, exist_ok=True)
+    words_path = out_dir / "words" / f"{name}.words.jsonl"
     with words_path.open("w") as f:
         for w in words:
             f.write(json.dumps({"t": round(w.t, 3), "w": w.text}) + "\n")
 
-    transcript_path = out_dir / f"{name}.txt"
+    transcript_path = out_dir / "transcripts" / f"{name}.txt"
     transcript_path.write_text("".join(transcript_parts))
 
     summary = RunSummary(
@@ -176,7 +178,7 @@ def run_stream(
         first_word_secs=first_word_at,
         word_count=len(words),
     )
-    summary_path = out_dir / f"{name}.summary.json"
+    summary_path = out_dir / "summaries" / f"{name}.summary.json"
     summary_path.write_text(
         json.dumps(asdict(summary) | {"speed_x": summary.speed_x}, indent=2) + "\n"
     )
