@@ -9,7 +9,7 @@ the API and delegates transcription and translation to external
 providers. (The original plan — local ASR on a Mac Mini — was abandoned;
 local models remain useful only as a free quality yardstick.)
 
-## Findings carried over from the transcription phase (branch: nemotron-mlx-accuracy)
+## Findings carried over from the transcription phase (branch: transcription-accuracy)
 
 **Test method that worked:**
 - Stratified patches of a real 30-min sermon (Matthew 3, Garry Williams):
