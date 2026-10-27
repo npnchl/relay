@@ -19,8 +19,21 @@ from time import perf_counter
 import reflex as rx
 import websockets
 from dotenv import load_dotenv
+from reflex_base.components.component import DEFAULT_TRIGGERS
+from reflex_components_core.el.elements.media import Audio
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
+
+class MediaAudio(Audio):
+    """rx.el.audio with the native media events Reflex omits (play/pause/ended)."""
+
+
+MediaAudio._event_triggers_cache = dict(DEFAULT_TRIGGERS) | {
+    "on_play": DEFAULT_TRIGGERS["on_mount"],
+    "on_pause": DEFAULT_TRIGGERS["on_mount"],
+    "on_ended": DEFAULT_TRIGGERS["on_mount"],
+}
 
 AUDIO_PATH = Path(__file__).resolve().parents[1] / "assets" / "sermon-16k.wav"
 CHUNK_MS = 100
@@ -53,16 +66,6 @@ class CaptionState(rx.State):
 
     # backend-only: bumping this invalidates any in-flight sessions
     _gen: int = 0
-
-    def attach_player_listeners(self) -> rx.event.EventSpec:
-        """Bind the native player's play/pause to backend events."""
-        return rx.call_script(
-            "(() => { const a = document.getElementById('sermon-audio');"
-            " if (a && !a._relayBound) { a._relayBound = true;"
-            " a.addEventListener('play', () => Event(CaptionState.player_play, []));"
-            " a.addEventListener('pause', () => Event(CaptionState.player_pause, []));"
-            " a.addEventListener('ended', () => Event(CaptionState.player_pause, [])); } })()"
-        )
 
     def player_play(self) -> rx.event.EventSpec:
         return rx.call_script(
@@ -384,12 +387,14 @@ def index() -> rx.Component:
         rx.el.div(
             rx.vstack(
                 rx.heading("relay — live caption compare", size="6"),
-                rx.el.audio(
+                MediaAudio.create(
                     src="/sermon-16k.wav",
                     id="sermon-audio",
                     controls=True,
                     width="100%",
-                    on_mount=CaptionState.attach_player_listeners,
+                    on_play=CaptionState.player_play,
+                    on_pause=CaptionState.player_pause,
+                    on_ended=CaptionState.player_pause,
                 ),
                 rx.el.div(
                     caption_panel(
