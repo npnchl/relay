@@ -1,10 +1,11 @@
 """live compare: interactive A/B of Speechmatics vs Soniox on the sermon.
 
-Play the full sermon audio in the browser, hit Start, and both providers
-receive the same audio from your current position at true realtime pace.
-Partials/non-final tokens render in grey (refining live); finals in solid.
+The browser's own audio player drives everything: press play and both
+providers start transcribing from the current position at true realtime
+pace; pause and the sessions stop. Partials render in grey (refining),
+finals in solid with [MM:SS] sermon timestamps.
 
-Run:  cd app && uv run reflex run --env-file ../.env  (or: reflex dev)
+Run:  cd app && uv run reflex run   (keys loaded from ../.env)
 """
 
 import asyncio
@@ -31,7 +32,7 @@ SONIOX_URL = "wss://stt-rt.soniox.com/transcribe-websocket"
 def read_pcm() -> bytes:
     with wave.open(str(AUDIO_PATH), "rb") as w:
         if w.getframerate() != 16000 or w.getnchannels() != 1 or w.getsampwidth() != 2:
-            raise SystemExit("need 16 kHz mono 16-bit WAV at assets/sermon-16k.wav")
+            raise SystemExit("need 16 kHz mono 16-bit WAV at app/assets/sermon-16k.wav")
         return w.readframes(w.getnframes())
 
 
@@ -57,29 +58,44 @@ class CaptionState(rx.State):
     soniox_first_token_ms: str = "-"
     soniox_first_final_ms: str = "-"
 
-    _stop: bool = False
+    # backend-only: bumping this invalidates any in-flight sessions
+    _gen: int = 0
 
-    def read_position_and_start(self) -> rx.event.EventSpec:
-        """Fetch the player's current time, then start both sessions."""
+    def attach_player_listeners(self) -> rx.event.EventSpec:
+        """Bind the native player's play/pause to backend events."""
+        return rx.call_script(
+            "(() => { const a = document.getElementById('sermon-audio');"
+            " if (a && !a._relayBound) { a._relayBound = true;"
+            " a.addEventListener('play', () => Event(CaptionState.player_play, []));"
+            " a.addEventListener('pause', () => Event(CaptionState.player_pause, []));"
+            " a.addEventListener('ended', () => Event(CaptionState.player_pause, [])); } })()"
+        )
+
+    def player_play(self) -> rx.event.EventSpec:
         return rx.call_script(
             "document.getElementById('sermon-audio').currentTime",
             callback=CaptionState.start_from_position,
         )
 
-    def start_from_position(self, pos: float) -> None:
-        pos = max(0.0, min(float(pos), len(PCM) / BYTES_PER_SEC - 0.1))
+    def player_pause(self) -> None:
+        self._gen += 1
+        self.sm_pending = ""
+        self.soniox_pending = ""
+
+    def start_from_position(self, pos: float) -> rx.event.EventSpec | None:
         if self.running:
-            return
+            return []
+        pos = max(0.0, min(float(pos), len(PCM) / BYTES_PER_SEC - 0.1))
         self.start_pos = pos
-        self._stop = False
-        return CaptionState.stream_both
+        self._gen += 1
+        return CaptionState.stream_both(self._gen)
 
     @rx.event(background=True)
-    async def stream_both(self) -> None:
+    async def stream_both(self, gen: int) -> None:
         async with self:
             self.running = True
-            self.sm_status = "connecting..."
-            self.soniox_status = "connecting..."
+            self.sm_status = "connecting…"
+            self.soniox_status = "connecting…"
             self.sm_finals = []
             self.sm_pending = ""
             self.soniox_finals = []
@@ -89,25 +105,21 @@ class CaptionState(rx.State):
             self.soniox_first_token_ms = "-"
             self.soniox_first_final_ms = "-"
         await asyncio.gather(
-            self.run_speechmatics(), self.run_soniox(), return_exceptions=True
+            self.run_speechmatics(gen),
+            self.run_soniox(gen),
+            return_exceptions=True,
         )
         async with self:
-            self.running = False
-            if self.sm_status.startswith("live"):
-                self.sm_status = "stopped"
-            if self.soniox_status.startswith("live"):
-                self.soniox_status = "stopped"
-
-    def stop_streams(self) -> None:
-        self._stop = True
-
-    @rx.var
-    def start_pos_label(self) -> str:
-        return fmt_mmss(self.start_pos)
+            if self._gen == gen:
+                self.running = False
+                if not self.sm_status.startswith("error"):
+                    self.sm_status = "stopped"
+                if not self.soniox_status.startswith("error"):
+                    self.soniox_status = "stopped"
 
     # ---------- Speechmatics ----------
 
-    async def run_speechmatics(self) -> None:
+    async def run_speechmatics(self, gen: int) -> None:
         key = os.environ.get("SPEECHMATICS_API_KEY")
         if not key:
             async with self:
@@ -123,10 +135,14 @@ class CaptionState(rx.State):
             i = 0
             next_at = perf_counter()
             while offset_bytes + i * chunk_bytes < len(PCM):
-                if self._stop:
+                if self._gen != gen:
                     return
                 await ws.send(
-                    PCM[offset_bytes + i * chunk_bytes : offset_bytes + (i + 1) * chunk_bytes]
+                    PCM[
+                        offset_bytes
+                        + i * chunk_bytes : offset_bytes
+                        + (i + 1) * chunk_bytes
+                    ]
                 )
                 i += 1
                 next_at += CHUNK_MS / 1000.0
@@ -159,6 +175,8 @@ class CaptionState(rx.State):
                     )
                 )
                 while True:
+                    if self._gen != gen:
+                        return
                     reply = json.loads(await ws.recv())
                     msg = reply.get("message")
                     if msg == "RecognitionStarted":
@@ -166,18 +184,15 @@ class CaptionState(rx.State):
                     if msg == "Error":
                         raise RuntimeError(str(reply))
                 async with self:
-                    self.sm_status = "live"
+                    if self._gen == gen:
+                        self.sm_status = "live"
                 sender_task = asyncio.create_task(sender(ws))
                 while True:
                     try:
+                        if self._gen != gen:
+                            break
                         msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=1.0))
                     except asyncio.TimeoutError:
-                        if sender_task.done() and self._stop:
-                            break
-                        if sender_task.done():
-                            # drain: keep reading until server closes or stop
-                            if self._stop:
-                                break
                         continue
                     kind = msg.get("message")
                     if kind == "AddTranscript":
@@ -196,16 +211,24 @@ class CaptionState(rx.State):
                             if first_partial is None:
                                 first_partial = perf_counter() - start
                             async with self:
-                                self.sm_first_partial_ms = f"{first_partial * 1000:.0f}ms"
-                                self.sm_pending = " ".join(pending_now)
+                                if self._gen == gen:
+                                    self.sm_first_partial_ms = (
+                                        f"{first_partial * 1000:.0f}ms"
+                                    )
+                                    self.sm_pending = " ".join(pending_now)
                         if finals_now:
                             if first_final is None:
                                 first_final = perf_counter() - start
                             stamp = fmt_mmss(self.start_pos + (perf_counter() - start))
                             async with self:
-                                self.sm_first_final_ms = f"{first_final * 1000:.0f}ms"
-                                self.sm_pending = ""
-                                self.sm_finals.append(f"[{stamp}] " + " ".join(finals_now))
+                                if self._gen == gen:
+                                    self.sm_first_final_ms = (
+                                        f"{first_final * 1000:.0f}ms"
+                                    )
+                                    self.sm_pending = ""
+                                    self.sm_finals.append(
+                                        f"[{stamp}] " + " ".join(finals_now)
+                                    )
                     elif kind == "EndOfTranscript":
                         break
                     elif kind == "Error":
@@ -213,14 +236,16 @@ class CaptionState(rx.State):
                 sender_task.cancel()
         except Exception as err:  # noqa: BLE001 - surface in UI
             async with self:
-                self.sm_status = f"error: {err}"
+                if self._gen == gen:
+                    self.sm_status = f"error: {err}"
             return
         async with self:
-            self.sm_status = "stopped"
+            if self._gen == gen:
+                self.sm_status = "stopped"
 
     # ---------- Soniox ----------
 
-    async def run_soniox(self) -> None:
+    async def run_soniox(self, gen: int) -> None:
         key = os.environ.get("SONIOX_API_KEY")
         if not key:
             async with self:
@@ -230,11 +255,9 @@ class CaptionState(rx.State):
         offset_bytes = int(self.start_pos * BYTES_PER_SEC)
         first_token: float | None = None
         first_final: float | None = None
-        finals: list[str] = []
-        pending: list[str] = []
         start = perf_counter()
 
-        def assemble(tokens: list[dict]) -> tuple[list[str], list[str]]:
+        def assemble(tokens: list[dict]) -> list[str]:
             words: list[str] = []
             pieces: list[str] = []
             for tok in tokens:
@@ -252,16 +275,20 @@ class CaptionState(rx.State):
                     pieces.append(text)
             if pieces:
                 words.append("".join(pieces))
-            return words, []
+            return words
 
         async def sender(ws) -> None:  # type: ignore[no-untyped-def]
             i = 0
             next_at = perf_counter()
             while offset_bytes + i * chunk_bytes < len(PCM):
-                if self._stop:
+                if self._gen != gen:
                     return
                 await ws.send(
-                    PCM[offset_bytes + i * chunk_bytes : offset_bytes + (i + 1) * chunk_bytes]
+                    PCM[
+                        offset_bytes
+                        + i * chunk_bytes : offset_bytes
+                        + (i + 1) * chunk_bytes
+                    ]
                 )
                 i += 1
                 next_at += CHUNK_MS / 1000.0
@@ -285,19 +312,25 @@ class CaptionState(rx.State):
                             "sample_rate": 16000,
                             "num_channels": 1,
                             "enable_endpoint_detection": True,
-                            "client_reference_id": f"live-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}",
+                            "client_reference_id": (
+                                "live-"
+                                + datetime.now(timezone.utc).strftime(
+                                    "%Y%m%dT%H%M%S"
+                                )
+                            ),
                         }
                     )
                 )
                 async with self:
-                    self.soniox_status = "live"
+                    if self._gen == gen:
+                        self.soniox_status = "live"
                 sender_task = asyncio.create_task(sender(ws))
                 while True:
                     try:
+                        if self._gen != gen:
+                            break
                         msg = json.loads(await asyncio.wait_for(ws.recv(), timeout=1.0))
                     except asyncio.TimeoutError:
-                        if self._stop or sender_task.done():
-                            continue
                         continue
                     if msg.get("error_code"):
                         raise RuntimeError(
@@ -309,31 +342,51 @@ class CaptionState(rx.State):
                     if tokens and first_token is None:
                         first_token = perf_counter() - start
                         async with self:
-                            self.soniox_first_token_ms = f"{first_token * 1000:.0f}ms"
+                            if self._gen == gen:
+                                self.soniox_first_token_ms = (
+                                    f"{first_token * 1000:.0f}ms"
+                                )
                     if nonfinal:
-                        pending = [str(t.get("text", "")) for t in nonfinal]
+                        pending = "".join(str(t.get("text", "")) for t in nonfinal)
                         async with self:
-                            self.soniox_pending = "".join(pending).strip()
+                            if self._gen == gen:
+                                self.soniox_pending = pending.strip()
                     if final_tokens:
                         if first_final is None:
                             first_final = perf_counter() - start
-                        words, _ = assemble(final_tokens)
+                        words = assemble(final_tokens)
                         if words:
-                            stamp = fmt_mmss(self.start_pos + (perf_counter() - start))
+                            stamp = fmt_mmss(
+                                self.start_pos + (perf_counter() - start)
+                            )
                             async with self:
-                                self.soniox_first_final_ms = f"{first_final * 1000:.0f}ms"
-                                self.soniox_pending = ""
-                                finals.append(" ".join(words))
-                                self.soniox_finals.append(f"[{stamp}] " + " ".join(words))
+                                if self._gen == gen:
+                                    self.soniox_first_final_ms = (
+                                        f"{first_final * 1000:.0f}ms"
+                                    )
+                                    self.soniox_pending = ""
+                                    self.soniox_finals.append(
+                                        f"[{stamp}] " + " ".join(words)
+                                    )
                     if msg.get("finished"):
                         break
                 sender_task.cancel()
         except Exception as err:  # noqa: BLE001 - surface in UI
             async with self:
-                self.soniox_status = f"error: {err}"
+                if self._gen == gen:
+                    self.soniox_status = f"error: {err}"
             return
         async with self:
-            self.soniox_status = "stopped"
+            if self._gen == gen:
+                self.soniox_status = "stopped"
+
+    @rx.var
+    def start_pos_label(self) -> str:
+        return fmt_mmss(self.start_pos)
+
+
+MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
+
 
 def status_badge(status: rx.Var) -> rx.Component:
     return rx.match(
@@ -355,14 +408,21 @@ def stat_chip(label: str, value: rx.Var) -> rx.Component:
     return rx.vstack(
         rx.text(
             value,
-            size="4",
+            size="3",
             weight="bold",
-            font_family="ui-monospace, Menlo, monospace",
+            font_family=MONO,
+            line_height="1.2",
+            white_space="nowrap",
         ),
-        rx.text(label, size="1", color=rx.color("gray", 10), wrap="nowrap"),
-        spacing="1",
+        rx.text(
+            label,
+            size="1",
+            color=rx.color("gray", 10),
+            white_space="nowrap",
+            line_height="1",
+        ),
+        spacing="0",
         align="center",
-        padding_x="4",
     )
 
 
@@ -386,22 +446,22 @@ def caption_panel(
                         width="10px",
                         height="10px",
                         border_radius="50%",
-                        margin="2px",
                     ),
                     background="color-mix(in srgb, " + accent + " 20%, transparent)",
                     border="1px solid " + accent,
                     border_radius="50%",
-                    padding="2px",
+                    padding="3px",
                 ),
-                rx.heading(title, size="5", weight="medium"),
+                rx.heading(title, size="5", weight="medium", wrap="nowrap"),
                 status_badge(status),
                 rx.spacer(),
                 rx.hstack(
                     stat_chip(first_a_label, first_a),
                     rx.divider(size="2", orientation="vertical"),
                     stat_chip(first_b_label, first_b),
-                    spacing="2",
+                    spacing="4",
                     align="center",
+                    height="100%",
                 ),
                 width="100%",
                 align="center",
@@ -413,7 +473,7 @@ def caption_panel(
                         lambda line: rx.text(
                             line,
                             size="3",
-                            font_family="ui-monospace, Menlo, monospace",
+                            font_family=MONO,
                             line_height="1.7",
                             padding_left="0.5em",
                             border_left="2px solid color-mix(in srgb, "
@@ -426,7 +486,7 @@ def caption_panel(
                         size="3",
                         color=rx.color("gray", 10),
                         italic=True,
-                        font_family="ui-monospace, Menlo, monospace",
+                        font_family=MONO,
                         line_height="1.7",
                     ),
                     width="100%",
@@ -438,17 +498,17 @@ def caption_panel(
             ),
         ),
         width="100%",
-        padding="6",
+        padding="5",
         size="3",
     )
 
 
 def index() -> rx.Component:
     return rx.theme(
-        rx.center(
-            rx.vstack(
-                rx.hstack(
-                    rx.vstack(
+        rx.el.div(
+            rx.el.div(
+                rx.vstack(
+                    rx.hstack(
                         rx.heading(
                             "relay",
                             size="8",
@@ -465,121 +525,118 @@ def index() -> rx.Component:
                             weight="bold",
                             as_="span",
                         ),
-                        rx.text(
-                            "Play the sermon, seek anywhere, hit Start — both providers "
-                            "transcribe that same stretch of audio live, side by side.",
-                            size="3",
-                            color=rx.color("gray", 11),
-                        ),
-                        spacing="2",
-                        align="start",
+                        rx.spacer(),
+                        rx.color_mode.button(),
+                        width="100%",
+                        align="center",
                     ),
-                    rx.spacer(),
-                    rx.color_mode.button(position="top-right"),
-                    width="100%",
-                    align="start",
-                ),
-                rx.card(
-                    rx.vstack(
-                        rx.el.audio(
-                            src="/sermon-16k.wav",
-                            id="sermon-audio",
-                            controls=True,
-                            width="100%",
-                        ),
-                        rx.hstack(
-                            rx.button(
-                                "Start captions",
-                                rx.icon("play", size=16),
-                                on_click=CaptionState.read_position_and_start,
-                                disabled=CaptionState.running,
-                                size="3",
-                                variant="solid",
+                    rx.text(
+                        "The player drives everything: play to start both "
+                        "providers on the audio you hear, pause to stop them. "
+                        "Seek anywhere, any time.",
+                        size="3",
+                        color=rx.color("gray", 11),
+                    ),
+                    rx.card(
+                        rx.vstack(
+                            rx.el.audio(
+                                src="/sermon-16k.wav",
+                                id="sermon-audio",
+                                controls=True,
+                                width="100%",
+                                on_mount=CaptionState.attach_player_listeners,
                             ),
-                            rx.button(
-                                "Stop",
-                                rx.icon("square", size=16),
-                                on_click=CaptionState.stop_streams,
-                                disabled=~CaptionState.running,
-                                size="3",
-                                variant="soft",
-                                color_scheme="red",
-                            ),
-                            rx.spacer(),
-                            rx.cond(
-                                CaptionState.running,
-                                rx.hstack(
-                                    rx.box(
-                                        width="8px",
-                                        height="8px",
-                                        border_radius="50%",
-                                        background=rx.color("grass", 9),
+                            rx.hstack(
+                                rx.cond(
+                                    CaptionState.running,
+                                    rx.hstack(
+                                        rx.box(
+                                            width="8px",
+                                            height="8px",
+                                            border_radius="50%",
+                                            background="var(--grass-9)",
+                                        ),
+                                        rx.text(
+                                            "streaming from ",
+                                            rx.code(CaptionState.start_pos_label),
+                                            size="2",
+                                            color=rx.color("gray", 11),
+                                        ),
+                                        spacing="2",
+                                        align="center",
                                     ),
                                     rx.text(
-                                        "streaming from ",
-                                        rx.code(CaptionState.start_pos_label),
+                                        "paused — captions follow the player",
                                         size="2",
-                                        color=rx.color("gray", 11),
+                                        color=rx.color("gray", 10),
                                     ),
                                 ),
-                                rx.text(
-                                    "idle — press play, seek, then Start",
-                                    size="2",
-                                    color=rx.color("gray", 10),
-                                ),
+                                width="100%",
+                                align="center",
+                                justify="center",
+                                min_height="24px",
                             ),
+                            spacing="4",
                             width="100%",
-                            align="center",
                         ),
-                        spacing="4",
+                        width="100%",
+                        padding="5",
+                        size="3",
+                    ),
+                    rx.el.div(
+                        caption_panel(
+                            "Speechmatics Enhanced",
+                            "var(--teal-9)",
+                            CaptionState.sm_status,
+                            CaptionState.sm_finals,
+                            CaptionState.sm_pending,
+                            "1st partial",
+                            CaptionState.sm_first_partial_ms,
+                            "1st final",
+                            CaptionState.sm_first_final_ms,
+                        ),
+                        caption_panel(
+                            "Soniox stt-rt-v5",
+                            "var(--violet-9)",
+                            CaptionState.soniox_status,
+                            CaptionState.soniox_finals,
+                            CaptionState.soniox_pending,
+                            "1st token",
+                            CaptionState.soniox_first_token_ms,
+                            "1st final",
+                            CaptionState.soniox_first_final_ms,
+                        ),
+                        style={
+                            "display": "grid",
+                            "grid_template_columns": "1fr 1fr",
+                            "gap": "24px",
+                            "width": "100%",
+                        },
+                    ),
+                    rx.text(
+                        "grey italic = partial / refining · solid = final · "
+                        "[MM:SS] marks sermon time · billing runs only while playing",
+                        size="1",
+                        color=rx.color("gray", 9),
+                        align="center",
                         width="100%",
                     ),
+                    spacing="6",
                     width="100%",
-                    padding="6",
-                    size="3",
-                ),
-                rx.grid(
-                    caption_panel(
-                        "Speechmatics Enhanced",
-                        "var(--teal-9)",
-                        CaptionState.sm_status,
-                        CaptionState.sm_finals,
-                        CaptionState.sm_pending,
-                        "1st partial",
-                        CaptionState.sm_first_partial_ms,
-                        "1st final",
-                        CaptionState.sm_first_final_ms,
-                    ),
-                    caption_panel(
-                        "Soniox stt-rt-v5",
-                        "var(--violet-9)",
-                        CaptionState.soniox_status,
-                        CaptionState.soniox_finals,
-                        CaptionState.soniox_pending,
-                        "1st token",
-                        CaptionState.soniox_first_token_ms,
-                        "1st final",
-                        CaptionState.soniox_first_final_ms,
-                    ),
-                    columns="2",
-                    gap="4",
-                    width="100%",
-                ),
-                rx.text(
-                    "grey italic = partial / refining · solid = final · "
-                    "[MM:SS] marks sermon time · billing runs only while captions stream",
-                    size="1",
-                    color=rx.color("gray", 9),
                     align="center",
-                    width="100%",
                 ),
-                spacing="5",
-                width="100%",
-                max_width="1160px",
-                padding="4",
+                style={
+                    "max_width": "1160px",
+                    "margin": "0 auto",
+                    "width": "100%",
+                },
             ),
-            min_height="92vh",
-            padding="4",
+            style={
+                "min_height": "100vh",
+                "padding": "48px 32px 64px 32px",
+                "box_sizing": "border-box",
+                "width": "100%",
+            },
         ),
         appearance="dark",
         accent_color="teal",
