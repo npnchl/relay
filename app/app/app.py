@@ -1,5 +1,5 @@
 """relay live compare — sermon in memory, player-driven chunk streamer,
-caption panels for Speechmatics and Soniox.
+caption panel for Speechmatics Enhanced.
 
 The player reports its position continuously (on_time_update). The
 chunk streamer reads 100 ms chunks straight from the in-memory sermon
@@ -18,7 +18,7 @@ import reflex as rx
 from reflex_components_react_player.audio import Audio
 from reflex_components_react_player.react_player import ReactPlayerEvent
 
-from .providers import SonioxSession, SpeechmaticsSession
+from .providers import SpeechmaticsSession
 
 APP_DIR = Path(__file__).resolve().parents[1]
 AUDIO_PATH = APP_DIR / "assets" / "sermon-16k.wav"
@@ -89,9 +89,6 @@ class PlayerState(rx.State):
     sm_status: str = ""
     sm_text: str = ""
     sm_pending: str = ""
-    soniox_status: str = ""
-    soniox_text: str = ""
-    soniox_pending: str = ""
 
     # backend-only: bumping this invalidates the in-flight streamer
     _gen: int = 0
@@ -129,9 +126,6 @@ class PlayerState(rx.State):
             self.sm_status = ""
             self.sm_text = ""
             self.sm_pending = ""
-            self.soniox_status = ""
-            self.soniox_text = ""
-            self.soniox_pending = ""
 
         async def on_sm_final(line: str) -> None:
             async with self:
@@ -144,43 +138,19 @@ class PlayerState(rx.State):
                 if self._gen == gen and text.strip():
                     self.sm_pending = text
 
-        async def on_sx_pending(text: str) -> None:
-            async with self:
-                if self._gen == gen and text.strip():
-                    self.soniox_pending = text
-
-        async def on_sx_final(line: str) -> None:
-            async with self:
-                if self._gen == gen and line.strip():
-                    self.soniox_text = (self.soniox_text + " " + line).strip()
-                    self.soniox_pending = ""
-
-
-
         async def on_sm_error(msg: str) -> None:
             async with self:
                 if self._gen == gen:
                     self.sm_status = msg
 
-        async def on_sx_error(msg: str) -> None:
-            async with self:
-                if self._gen == gen:
-                    self.soniox_status = msg
-
         sessions: list = []
         sm_key = os.environ.get("SPEECHMATICS_API_KEY")
-        sx_key = os.environ.get("SONIOX_API_KEY")
         if sm_key:
             sm = SpeechmaticsSession(sm_key)
             sessions.append((sm, on_sm_final, on_sm_pending, on_sm_error))
-        if sx_key:
-            sx = SonioxSession(sx_key)
-            sessions.append((sx, on_sx_final, on_sx_pending, on_sx_error))
         async with self:
             if not sm_key:
                 self.sm_status = "no SPEECHMATICS_API_KEY"
-            if not sx_key:
-                self.soniox_status = "no SONIOX_API_KEY"
 
         try:
             for session, on_final, on_pending, on_error in sessions:
@@ -228,10 +198,6 @@ class PlayerState(rx.State):
     @rx.var
     def sm_display(self) -> str:
         return (self.sm_text + " " + self.sm_pending).strip()
-
-    @rx.var
-    def soniox_display(self) -> str:
-        return (self.soniox_text + " " + self.soniox_pending).strip()
 
     @rx.var
     def position_label(self) -> str:
@@ -310,23 +276,10 @@ def index() -> rx.Component:
                     color=rx.color("gray", 11),
                     font_family=MONO,
                 ),
-                rx.el.div(
-                    caption_panel(
-                        "Speechmatics Enhanced",
-                        PlayerState.sm_status,
-                        PlayerState.sm_display,
-                    ),
-                    caption_panel(
-                        "Soniox stt-rt-v5",
-                        PlayerState.soniox_status,
-                        PlayerState.soniox_display,
-                    ),
-                    style={
-                        "display": "grid",
-                        "grid_template_columns": "1fr 1fr",
-                        "gap": "24px",
-                        "width": "100%",
-                    },
+                caption_panel(
+                    "Speechmatics Enhanced",
+                    PlayerState.sm_status,
+                    PlayerState.sm_display,
                 ),
                 spacing="6",
                 width="100%",
