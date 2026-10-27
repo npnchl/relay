@@ -54,7 +54,8 @@ Type checks: `uv run mypy tools/` (strict).
 
 ## Speechmatics Enhanced run configuration
 
-All Speechmatics runs (`tools/stream_speechmatics.py`) use these settings:
+All Speechmatics runs (`tools/stream_speechmatics.py` and the live
+tuning app) use these settings:
 
 - **Endpoint:** `wss://eu.rt.speechmatics.com/v2` (EU region, for data
   residency), auth via `SPEECHMATICS_API_KEY` (Bearer token, from `.env`).
@@ -64,11 +65,22 @@ All Speechmatics runs (`tools/stream_speechmatics.py`) use these settings:
   kept, so text never rewrites. Finals arrive progressively (small chunks
   roughly 0.5-1 s behind the speech), not once per sentence. End-of-session
   flush takes another ~30 s after the last audio, irrelevant for live use.
+- **`max_delay: 1.5` with `max_delay_mode: flexible`** — the chosen tuning,
+  decided interactively via the live app (`app/`): finals commit fast
+  enough that latency isn't noticeable, with a bit more revision time
+  than the snappier 0.7 s. `flexible` lets the model hold a final briefly
+  so numbers/dates format properly.
 - **No custom dictionary, no other options set** — the model runs with all
   defaults.
 - **Audio fed to the API:** 16 kHz mono 16-bit PCM (`prep.py` output), sent in
   100 ms chunks (3,200 bytes each) at true realtime pace — the server sees
   a live stream, not a batch upload. Session closes with `EndOfStream`.
+
+**Live tuning app (`app/`):** a Reflex app that plays the full sermon
+in the browser; the player's own clock drives chunk streaming (only
+audio the player has reached is sent, so captions cannot drift), and
+play/pause/seek start/stop the provider session. Used to settle the
+max_delay choice above.
 
 **Full-sermon run (`full-sermon-enhanced`, 30 min Matthew 3 sermon):**
 1800 s audio → 1828 s wall, 5,400 words, first final at +2.9 s from session
