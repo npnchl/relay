@@ -27,7 +27,7 @@ ENV_PATH = APP_DIR.parent / ".env"
 BYTES_PER_SEC = 32000  # 16 kHz * 2 bytes, mono
 CHUNK_MS = 100
 CHUNK_BYTES = int(BYTES_PER_SEC * CHUNK_MS / 1000)
-WORDS_PER_LINE = 12
+MAX_LINE_WORDS = 15
 MAX_LINES = 300
 
 
@@ -121,19 +121,24 @@ class PlayerState(rx.State):
     # ---- caption line helpers ----
 
     def _append_words(self, which: str, text: str) -> None:
-        """Append caption words, wrapping into lines like real captions."""
+        """Append caption text; a new line starts only when the previous
+        line ended a sentence, with a word cap for run-on speech."""
         finals = self.sm_finals if which == "sm" else self.soniox_finals
-        if not text.strip():
+        text = text.strip()
+        if not text:
             return
-        words = text.split()
-        while words:
-            if finals and len(finals[-1].split()) < WORDS_PER_LINE:
-                room = WORDS_PER_LINE - len(finals[-1].split())
-                finals[-1] = (finals[-1] + " " + " ".join(words[:room])).strip()
-                words = words[room:]
-            else:
-                finals.append(" ".join(words[:WORDS_PER_LINE]))
-                words = words[WORDS_PER_LINE:]
+        sentence_done = (
+            finals and finals[-1].endswith((".", "?", "!", '"', "'"))
+        )
+        if not finals or sentence_done:
+            finals.append(text)
+        else:
+            finals[-1] = finals[-1] + " " + text
+        # hard cap for long unpunctuated speech
+        if len(finals[-1].split()) > MAX_LINE_WORDS:
+            words = finals[-1].split()
+            finals[-1] = " ".join(words[:-MAX_LINE_WORDS])
+            finals.append(" ".join(words[-MAX_LINE_WORDS:]))
         del finals[: max(0, len(finals) - MAX_LINES)]
 
     # ---- player-locked chunk streamer fanning out to providers ----
