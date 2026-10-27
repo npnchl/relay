@@ -28,19 +28,15 @@ class PlayerState(rx.State):
     # captions from the Speechmatics session
     sm_status: str = ""
     en_text: str = ""
-    hindi_sentences: list[dict] = []  # {"idx", "start", "text"}
+    hindi_sentences: list[dict] = []  # {"idx", "at", "start", "text"}
 
-    # TTS review state
-    tts_src: str = ""
+    # TTS review state: which sentence is speaking
     tts_idx: int = -1
-    tts_loading: bool = False
 
     # backend-only: bumping this invalidates the in-flight loop
     _gen: int = 0
     # backend-only: true while the slider thumb is being dragged
     _seeking: bool = False
-    # backend-only: forces the audio element to reload on replay
-    _nonce: int = 0
 
     # ---- controls ----
 
@@ -75,11 +71,15 @@ class PlayerState(rx.State):
         self.position = min(values[0], audio.DURATION_SECS)
 
     def seek(self, values: list[float]) -> None:
-        """Seek committed on release: restart the chunk stream clean at
-        the new position - no stale chunks or gaps carried over from
-        where the playhead used to be."""
+        """Seek committed on release: clear the caption buffers and
+        restart the chunk stream clean at the new position - nothing
+        carries over, so no gaps between old and new transcript."""
         self._seeking = False
         self.position = min(values[0], audio.DURATION_SECS)
+        self.en_text = ""
+        self.hindi_sentences = []
+        self.sm_status = ""
+        self.tts_idx = -1
         if self.position >= audio.DURATION_SECS:
             self.playing = False
             self._gen += 1
@@ -177,29 +177,24 @@ class PlayerState(rx.State):
 
     # ---- TTS review ----
 
-    @rx.event(background=True)
-    async def play_sentence(self, idx: int) -> None:
-        """Speak one Hindi sentence: Azure TTS -> audio in the browser."""
-        async with self:
-            if idx >= len(self.hindi_sentences):
-                return
-            text = self.hindi_sentences[idx]["text"]
-            self.tts_loading = True
-        try:
-            data = azure_tts.synthesize(text)
-        except Exception as err:  # noqa: BLE001
-            async with self:
-                self.tts_loading = False
-                self.sm_status = f"tts error: {err}"
-            return
+    async def play_sentence(self, idx: int) -> rx.event.EventSpec:
+        """Speak one Hindi sentence straight from the click: Azure TTS
+        synthesises it, then JS plays the audio directly - no visible
+        audio player involved."""
+        if idx >= len(self.hindi_sentences):
+            return []
+        text = self.hindi_sentences[idx]["text"]
+        self.tts_idx = idx
+        # synth in a worker thread so the UI stays responsive
+        data = await asyncio.to_thread(azure_tts.synthesize, text)
         b64 = base64.b64encode(data).decode()
-        async with self:
-            self._nonce += 1
-            # the fragment forces the audio element to reload, so the
-            # same sentence can be replayed too
-            self.tts_src = f"data:audio/mpeg;base64,{b64}#n={self._nonce}"
-            self.tts_idx = idx
-            self.tts_loading = False
+        # one shared Audio object: a new click swaps the src, which
+        # also stops whatever was playing
+        return rx.call_script(
+            "window._tts = window._tts || new Audio();"
+            f"window._tts.src = 'data:audio/mpeg;base64,{b64}';"
+            "window._tts.play();"
+        )
 
     # ---- readouts ----
 

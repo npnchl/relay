@@ -91,11 +91,7 @@ def english_panel() -> rx.Component:
 def hindi_panel() -> rx.Component:
     return caption_panel(
         "हिन्दी — translation, spoken by Azure TTS",
-        rx.cond(
-            PlayerState.tts_loading,
-            rx.badge("speaking…", color_scheme="teal", variant="soft"),
-            PlayerState.sm_status,
-        ),
+        PlayerState.sm_status,
         rx.scroll_area(
             rx.vstack(
                 rx.foreach(PlayerState.hindi_sentences, hindi_row),
@@ -166,15 +162,6 @@ def index() -> rx.Component:
                 ),
                 english_panel(),
                 hindi_panel(),
-                # the TTS audio player: invisible, driven by play buttons
-                rx.cond(
-                    PlayerState.tts_src != "",
-                    rx.audio(
-                        src=PlayerState.tts_src,
-                        auto_play=True,
-                        style={"display": "none"},
-                    ),
-                ),
                 spacing="5",
                 align="center",
                 width="100%",
