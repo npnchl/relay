@@ -53,7 +53,7 @@ class SpeechmaticsSession:
                         "language": "en",
                         "operating_point": "enhanced",
                         "enable_partials": False,
-                        "max_delay": 0.7,
+                        "max_delay": 1.5,
                         "max_delay_mode": "flexible",
                     },
                 }
