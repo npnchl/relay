@@ -67,8 +67,9 @@ class SpeechmaticsSession:
                     "transcription_config": {
                         "language": "en",
                         "operating_point": "enhanced",
-                        # finals only - matches the relay captions decision
-                        "enable_partials": True,
+                        "enable_partials": False,
+                        "max_delay": 0.7,
+                        "max_delay_mode": "flexible",
                     },
                 }
             )
