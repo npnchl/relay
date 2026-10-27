@@ -21,6 +21,9 @@ def index() -> rx.Component:
                     rx.button(
                         rx.cond(PlayerState.playing, "Pause", "Play"),
                         on_click=PlayerState.toggle,
+                        size="3",
+                        px="5",
+                        font_weight="medium",
                     ),
                     rx.slider(
                         value=[PlayerState.position],
@@ -33,12 +36,14 @@ def index() -> rx.Component:
                     ),
                     rx.text(
                         PlayerState.position_label,
-                        size="4",
+                        size="2",
                         font_family=MONO,
                         white_space="nowrap",
+                        color=rx.color("gray", 11),
                     ),
                     align="center",
                     width="100%",
+                    gap="5",
                 ),
                 rx.text(
                     PlayerState.chunk_label,
