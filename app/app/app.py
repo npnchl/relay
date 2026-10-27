@@ -26,9 +26,14 @@ def index() -> rx.Component:
                     ),
                     spacing="4",
                 ),
-                rx.progress(
-                    value=PlayerState.progress_percent,
+                rx.slider(
+                    value=[PlayerState.position],
+                    min=0,
+                    max=audio.DURATION_SECS,
+                    step=1,
                     width="100%",
+                    on_change=PlayerState.drag,
+                    on_value_commit=PlayerState.seek,
                 ),
                 rx.text(PlayerState.position_label, size="4", font_family=MONO),
                 rx.text(

@@ -19,6 +19,8 @@ class PlayerState(rx.State):
 
     # backend-only: bumping this invalidates the in-flight loop
     _gen: int = 0
+    # backend-only: true while the slider thumb is being dragged
+    _seeking: bool = False
 
     # ---- controls ----
 
@@ -32,6 +34,27 @@ class PlayerState(rx.State):
     def stop(self) -> None:
         self.playing = False
         self._gen += 1
+
+    # ---- seeking ----
+
+    def drag(self, values: list[float]) -> None:
+        """Live preview while the thumb moves: move the playhead only."""
+        self._seeking = True
+        self.position = min(values[0], audio.DURATION_SECS)
+
+    def seek(self, values: list[float]) -> None:
+        """Seek committed on release: restart the chunk stream clean at
+        the new position - no stale chunks or gaps carried over from
+        where the playhead used to be."""
+        self._seeking = False
+        self.position = min(values[0], audio.DURATION_SECS)
+        if self.position >= audio.DURATION_SECS:
+            self.playing = False
+            self._gen += 1
+            return
+        if self.playing:
+            self._gen += 1
+            return PlayerState.run(self._gen, self.position)
 
     # ---- the virtual clock ----
 
@@ -48,6 +71,10 @@ class PlayerState(rx.State):
             async with self:
                 if self._gen != gen or not self.playing:
                     return
+                if self._seeking:
+                    # a drag is in flight: don't fight it with clock
+                    # writes - the seek will restart this loop anyway
+                    continue
                 elapsed = asyncio.get_running_loop().time() - t0
                 self.position = min(start_pos + elapsed, audio.DURATION_SECS)
                 if self.position >= audio.DURATION_SECS:
@@ -63,10 +90,6 @@ class PlayerState(rx.State):
     @rx.var
     def position_label(self) -> str:
         return f"{audio.fmt_mmss(self.position)} / {audio.fmt_mmss(audio.DURATION_SECS)}"
-
-    @rx.var
-    def progress_percent(self) -> int:
-        return int(self.position / audio.DURATION_SECS * 100)
 
     @rx.var
     def chunk_label(self) -> str:
