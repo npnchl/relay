@@ -2,8 +2,8 @@
 
 The browser's audio player drives everything: press play and both
 providers start transcribing from the current position at true realtime
-pace; pause and the sessions stop. Partials render in grey (refining),
-finals in solid with [MM:SS] sermon timestamps.
+pace; pause and the sessions stop; seek and they restart at the new
+spot. Just the words - no timestamps, no chrome.
 
 Run:  cd app && uv run reflex run   (keys loaded from ../.env)
 """
@@ -14,7 +14,6 @@ import os
 import wave
 from datetime import datetime, timezone
 from pathlib import Path
-from time import perf_counter
 
 import reflex as rx
 import websockets
@@ -24,22 +23,12 @@ from reflex_components_core.el.elements.media import Audio
 
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
-
-class MediaAudio(Audio):
-    """rx.el.audio with the native media events Reflex omits (play/pause/ended)."""
-
-
-MediaAudio._event_triggers_cache = dict(DEFAULT_TRIGGERS) | {
-    "on_play": DEFAULT_TRIGGERS["on_mount"],
-    "on_pause": DEFAULT_TRIGGERS["on_mount"],
-    "on_ended": DEFAULT_TRIGGERS["on_mount"],
-}
-
 AUDIO_PATH = Path(__file__).resolve().parents[1] / "assets" / "sermon-16k.wav"
 CHUNK_MS = 100
 BYTES_PER_SEC = 32000
 SM_URL = "wss://eu.rt.speechmatics.com/v2"
 SONIOX_URL = "wss://stt-rt.soniox.com/transcribe-websocket"
+MAX_LINES = 300  # cap transcript lines sent to the browser
 
 
 def read_pcm() -> bytes:
@@ -52,8 +41,24 @@ def read_pcm() -> bytes:
 PCM = read_pcm()
 
 
-def fmt_mmss(secs: float) -> str:
-    return f"{int(secs // 60):02d}:{int(secs % 60):02d}"
+def join_tokens(tokens: list[str]) -> str:
+    """Join Speechmatics word/punctuation tokens without ' ,' artifacts."""
+    out = " ".join(tokens)
+    for punct in (",", ".", "!", "?", ";", ":"):
+        out = out.replace(" " + punct, punct)
+    return out
+
+
+class MediaAudio(Audio):
+    """rx.el.audio with the native media events Reflex omits."""
+
+
+MediaAudio._event_triggers_cache = dict(DEFAULT_TRIGGERS) | {
+    "on_play": DEFAULT_TRIGGERS["on_mount"],
+    "on_pause": DEFAULT_TRIGGERS["on_mount"],
+    "on_ended": DEFAULT_TRIGGERS["on_mount"],
+    "on_seeked": DEFAULT_TRIGGERS["on_mount"],
+}
 
 
 class CaptionState(rx.State):
@@ -66,6 +71,11 @@ class CaptionState(rx.State):
 
     # backend-only: bumping this invalidates any in-flight sessions
     _gen: int = 0
+    # backend-only: Speechmatics partials are deltas - accumulate them
+    _sm_partial_words: list[str] = []
+    # backend-only: Soniox subword pieces can straddle messages - keep
+    # the unfinished word between messages
+    _soniox_pieces: list[str] = []
 
     def player_play(self) -> rx.event.EventSpec:
         return rx.call_script(
@@ -78,7 +88,18 @@ class CaptionState(rx.State):
         self.sm_pending = ""
         self.soniox_pending = ""
 
-    def start_from_position(self, pos: float) -> rx.event.EventSpec | None:
+    def player_seeked(self) -> rx.event.EventSpec:
+        # only resync if actually playing (seeking while paused is a no-op)
+        return rx.call_script(
+            "document.getElementById('sermon-audio').paused"
+            " ? null"
+            " : document.getElementById('sermon-audio').currentTime",
+            callback=CaptionState.start_from_position,
+        )
+
+    def start_from_position(self, pos: float | None) -> rx.event.EventSpec | None:
+        if pos is None:
+            return []
         start_pos = max(0.0, min(float(pos), len(PCM) / BYTES_PER_SEC - 0.1))
         self._gen += 1
         return CaptionState.stream_both(self._gen, start_pos)
@@ -92,11 +113,19 @@ class CaptionState(rx.State):
             self.sm_pending = ""
             self.soniox_finals = []
             self.soniox_pending = ""
+            self._sm_partial_words = []
+            self._soniox_pieces = []
         await asyncio.gather(
             self.run_speechmatics(gen, start_pos),
             self.run_soniox(gen, start_pos),
             return_exceptions=True,
         )
+
+    def _push_line(self, which: str, line: str) -> None:
+        finals = self.sm_finals if which == "sm" else self.soniox_finals
+        finals.append(line)
+        if len(finals) > MAX_LINES:
+            del finals[: len(finals) - MAX_LINES]
 
     # ---------- Speechmatics ----------
 
@@ -108,11 +137,10 @@ class CaptionState(rx.State):
             return
         chunk_bytes = int(BYTES_PER_SEC * CHUNK_MS / 1000)
         offset_bytes = int(start_pos * BYTES_PER_SEC)
-        start = perf_counter()
 
         async def sender(ws) -> None:  # type: ignore[no-untyped-def]
             i = 0
-            next_at = perf_counter()
+            next_at = asyncio.get_event_loop().time()
             while offset_bytes + i * chunk_bytes < len(PCM):
                 if self._gen != gen:
                     return
@@ -125,7 +153,7 @@ class CaptionState(rx.State):
                 )
                 i += 1
                 next_at += CHUNK_MS / 1000.0
-                delay = next_at - perf_counter()
+                delay = next_at - asyncio.get_event_loop().time()
                 if delay > 0:
                     await asyncio.sleep(delay)
             await ws.send(json.dumps({"message": "EndOfStream"}))
@@ -183,18 +211,19 @@ class CaptionState(rx.State):
                                 finals_now.append(content)
                             else:
                                 pending_now.append(content)
-                        if pending_now:
-                            async with self:
-                                if self._gen == gen:
-                                    self.sm_pending = " ".join(pending_now)
-                        if finals_now:
-                            stamp = fmt_mmss(start_pos + (perf_counter() - start))
-                            async with self:
-                                if self._gen == gen:
-                                    self.sm_pending = ""
-                                    self.sm_finals.append(
-                                        f"[{stamp}] " + " ".join(finals_now)
-                                    )
+                        async with self:
+                            if self._gen != gen:
+                                break
+                            if pending_now:
+                                # partials are deltas: accumulate, don't replace
+                                self._sm_partial_words.extend(pending_now)
+                                self.sm_pending = join_tokens(
+                                    self._sm_partial_words
+                                )
+                            if finals_now:
+                                self._sm_partial_words = []
+                                self.sm_pending = ""
+                                self._push_line("sm", join_tokens(finals_now))
                     elif kind == "EndOfTranscript":
                         break
                     elif kind == "Error":
@@ -215,31 +244,10 @@ class CaptionState(rx.State):
             return
         chunk_bytes = int(BYTES_PER_SEC * CHUNK_MS / 1000)
         offset_bytes = int(start_pos * BYTES_PER_SEC)
-        start = perf_counter()
-
-        def assemble(tokens: list[dict]) -> list[str]:
-            words: list[str] = []
-            pieces: list[str] = []
-            for tok in tokens:
-                text = str(tok.get("text", ""))
-                if not text:
-                    continue
-                if text[0].isspace():
-                    if pieces:
-                        words.append("".join(pieces))
-                        pieces = []
-                    stripped = text.strip()
-                    if stripped:
-                        pieces.append(stripped)
-                else:
-                    pieces.append(text)
-            if pieces:
-                words.append("".join(pieces))
-            return words
 
         async def sender(ws) -> None:  # type: ignore[no-untyped-def]
             i = 0
-            next_at = perf_counter()
+            next_at = asyncio.get_event_loop().time()
             while offset_bytes + i * chunk_bytes < len(PCM):
                 if self._gen != gen:
                     return
@@ -252,7 +260,7 @@ class CaptionState(rx.State):
                 )
                 i += 1
                 next_at += CHUNK_MS / 1000.0
-                delay = next_at - perf_counter()
+                delay = next_at - asyncio.get_event_loop().time()
                 if delay > 0:
                     await asyncio.sleep(delay)
             await ws.send("")
@@ -293,25 +301,34 @@ class CaptionState(rx.State):
                         raise RuntimeError(
                             f"{msg.get('error_code')}: {msg.get('error_message')}"
                         )
-                    tokens = msg.get("tokens", [])
-                    final_tokens = [t for t in tokens if t.get("is_final")]
-                    nonfinal = [t for t in tokens if not t.get("is_final")]
+                    final_tokens = [t for t in msg.get("tokens", []) if t.get("is_final")]
+                    nonfinal = [t for t in msg.get("tokens", []) if not t.get("is_final")]
                     if nonfinal:
+                        # each response carries the full non-final window
                         pending = "".join(str(t.get("text", "")) for t in nonfinal)
                         async with self:
                             if self._gen == gen:
                                 self.soniox_pending = pending.strip()
                     if final_tokens:
-                        words = assemble(final_tokens)
-                        if words:
-                            stamp = fmt_mmss(
-                                start_pos + (perf_counter() - start)
-                            )
-                            async with self:
-                                if self._gen == gen:
-                                    self.soniox_pending = ""
-                                    self.soniox_finals.append(
-                                        f"[{stamp}] " + " ".join(words)
+                        words_now: list[str] = []
+                        for tok in final_tokens:
+                            text = str(tok.get("text", ""))
+                            if not text:
+                                continue
+                            if text[0].isspace():
+                                if self._soniox_pieces:
+                                    words_now.append("".join(self._soniox_pieces))
+                                    self._soniox_pieces = []
+                                stripped = text.strip()
+                                if stripped:
+                                    self._soniox_pieces.append(stripped)
+                            else:
+                                self._soniox_pieces.append(text)
+                        async with self:
+                            if self._gen == gen:
+                                if words_now:
+                                    self._push_line(
+                                        "soniox", " ".join(words_now)
                                     )
                     if msg.get("finished"):
                         break
@@ -395,6 +412,7 @@ def index() -> rx.Component:
                     on_play=CaptionState.player_play,
                     on_pause=CaptionState.player_pause,
                     on_ended=CaptionState.player_pause,
+                    on_seeked=CaptionState.player_seeked,
                 ),
                 rx.el.div(
                     caption_panel(
