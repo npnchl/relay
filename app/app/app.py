@@ -76,6 +76,10 @@ def fmt_mmss(secs: float) -> str:
     return f"{int(secs // 60):02d}:{int(secs % 60):02d}"
 
 
+async def _noop(text: str) -> None:
+    """Partials disabled: finals only, per the captions decision."""
+
+
 class PlayerState(rx.State):
     position: float = 0.0
     duration: float = float(DURATION_SECS)
@@ -86,10 +90,8 @@ class PlayerState(rx.State):
 
     sm_status: str = ""
     sm_finals: list[str] = []
-    sm_pending: str = ""
     soniox_status: str = ""
     soniox_finals: list[str] = []
-    soniox_pending: str = ""
 
     # backend-only: bumping this invalidates the in-flight streamer
     _gen: int = 0
@@ -144,32 +146,22 @@ class PlayerState(rx.State):
             self.chunks_sent = 0
             self.sm_status = ""
             self.sm_finals = []
-            self.sm_pending = ""
             self.soniox_status = ""
             self.soniox_finals = []
-            self.soniox_pending = ""
 
         async def on_sm_final(line: str) -> None:
             async with self:
                 if self._gen == gen:
-                    self.sm_pending = ""
                     self._append_words("sm", line)
 
-        async def on_sm_pending(text: str) -> None:
-            async with self:
-                if self._gen == gen and text.strip():
-                    self.sm_pending = text
+        on_noop = _noop
 
         async def on_sx_final(line: str) -> None:
             async with self:
                 if self._gen == gen:
-                    self.soniox_pending = ""
                     self._append_words("soniox", line)
 
-        async def on_sx_pending(text: str) -> None:
-            async with self:
-                if self._gen == gen and text.strip():
-                    self.soniox_pending = text
+
 
         async def on_sm_error(msg: str) -> None:
             async with self:
@@ -186,10 +178,10 @@ class PlayerState(rx.State):
         sx_key = os.environ.get("SONIOX_API_KEY")
         if sm_key:
             sm = SpeechmaticsSession(sm_key)
-            sessions.append((sm, on_sm_final, on_sm_pending, on_sm_error))
+            sessions.append((sm, on_sm_final, on_noop, on_sm_error))
         if sx_key:
             sx = SonioxSession(sx_key)
-            sessions.append((sx, on_sx_final, on_sx_pending, on_sx_error))
+            sessions.append((sx, on_sx_final, on_noop, on_sx_error))
         async with self:
             if not sm_key:
                 self.sm_status = "no SPEECHMATICS_API_KEY"
@@ -255,10 +247,8 @@ MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 
 def caption_panel(
     title: str,
-    accent: str,
     status: rx.Var,
     finals: rx.Var,
-    pending: rx.Var,
 ) -> rx.Component:
     return rx.card(
         rx.vstack(
@@ -281,14 +271,6 @@ def caption_panel(
                         font_family=MONO,
                         line_height="1.7",
                     )),
-                    rx.text(
-                        pending,
-                        size="3",
-                        color=rx.color("gray", 10),
-                        italic=True,
-                        font_family=MONO,
-                        line_height="1.7",
-                    ),
                     width="100%",
                     align="start",
                     spacing="1",
@@ -334,17 +316,13 @@ def index() -> rx.Component:
                 rx.el.div(
                     caption_panel(
                         "Speechmatics Enhanced",
-                        "var(--teal-9)",
                         PlayerState.sm_status,
                         PlayerState.sm_finals,
-                        PlayerState.sm_pending,
                     ),
                     caption_panel(
                         "Soniox stt-rt-v5",
-                        "var(--violet-9)",
                         PlayerState.soniox_status,
                         PlayerState.soniox_finals,
-                        PlayerState.soniox_pending,
                     ),
                     style={
                         "display": "grid",
