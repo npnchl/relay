@@ -1,11 +1,13 @@
 """Speechmatics realtime session: English STT + Hindi translation.
 
-One realtime connection to the EU endpoint, using the transcription
-settings settled in phase 1 (enhanced model, finals-only, max_delay
-1.5 s, flexible) plus a translation config targeting Hindi. The
-vendor streams translated text as AddTranslation messages, so the
-simultaneous-translation tradeoffs are handled inside their model -
-we just display what arrives.
+One realtime connection to the EU endpoint, using the phase-1
+transcription settings (enhanced model, finals-only, max_delay 1.5
+s, flexible - tested at 2.0 and 4.0 too; the vendor's untranslated
+passthrough on long units is identical at all delays) plus a
+translation config targeting Hindi. The vendor streams translated
+text as AddTranslation messages, so the simultaneous-translation
+tradeoffs are handled inside their model - we just display what
+arrives.
 
 Pushes updates through callbacks with their spans in the original
 audio: on_final(en_line, start, end), on_translation(hi_text,
