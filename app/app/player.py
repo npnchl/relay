@@ -24,6 +24,13 @@ class PlayerState(rx.State):
 
     # ---- controls ----
 
+    def toggle(self) -> rx.event.EventSpec | None:
+        """One button: play when paused, pause when playing."""
+        if self.playing:
+            self.stop()
+            return None
+        return self.start()
+
     def start(self) -> rx.event.EventSpec | None:
         if self.position >= audio.DURATION_SECS:
             self.position = 0.0

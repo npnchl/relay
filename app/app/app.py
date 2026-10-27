@@ -19,23 +19,27 @@ def index() -> rx.Component:
                 rx.heading("relay — virtual player", size="6"),
                 rx.hstack(
                     rx.button(
-                        "Start", on_click=PlayerState.start, disabled=PlayerState.playing
+                        rx.cond(PlayerState.playing, "Pause", "Play"),
+                        on_click=PlayerState.toggle,
                     ),
-                    rx.button(
-                        "Stop", on_click=PlayerState.stop, disabled=~PlayerState.playing
+                    rx.slider(
+                        value=[PlayerState.position],
+                        min=0,
+                        max=audio.DURATION_SECS,
+                        step=1,
+                        on_change=PlayerState.drag,
+                        on_value_commit=PlayerState.seek,
+                        flex_grow="1",
                     ),
-                    spacing="4",
-                ),
-                rx.slider(
-                    value=[PlayerState.position],
-                    min=0,
-                    max=audio.DURATION_SECS,
-                    step=1,
+                    rx.text(
+                        PlayerState.position_label,
+                        size="4",
+                        font_family=MONO,
+                        white_space="nowrap",
+                    ),
+                    align="center",
                     width="100%",
-                    on_change=PlayerState.drag,
-                    on_value_commit=PlayerState.seek,
                 ),
-                rx.text(PlayerState.position_label, size="4", font_family=MONO),
                 rx.text(
                     PlayerState.chunk_label,
                     size="3",
