@@ -27,8 +27,8 @@ class PlayerState(rx.State):
 
     # captions from the Speechmatics session
     sm_status: str = ""
-    en_text: str = ""
-    hindi_sentences: list[dict] = []  # {"idx", "at", "start", "text"}
+    en_fragments: list[dict] = []  # {"start", "end", "text"}
+    hindi_sentences: list[dict] = []  # {"idx", "at", "start", "end", "text"}
 
     # TTS review state: which sentence is speaking
     tts_idx: int = -1
@@ -53,7 +53,7 @@ class PlayerState(rx.State):
         if self.position == 0.0:
             # fresh run from the top: clear the old captions
             self.sm_status = ""
-            self.en_text = ""
+            self.en_fragments = []
             self.hindi_sentences = []
         self._gen += 1
         self.playing = True
@@ -76,7 +76,7 @@ class PlayerState(rx.State):
         carries over, so no gaps between old and new transcript."""
         self._seeking = False
         self.position = min(values[0], audio.DURATION_SECS)
-        self.en_text = ""
+        self.en_fragments = []
         self.hindi_sentences = []
         self.sm_status = ""
         self.tts_idx = -1
@@ -96,19 +96,26 @@ class PlayerState(rx.State):
         chunk it passes to Speechmatics - never ahead of the clock."""
         loop = asyncio.get_running_loop()
 
-        async def on_final(line: str) -> None:
+        async def on_final(line: str, start: float, end: float) -> None:
             async with self:
                 if self._gen == gen and line.strip():
-                    self.en_text = (self.en_text + " " + line).strip()
+                    self.en_fragments.append(
+                        {
+                            "start": round(start, 2),
+                            "end": round(end, 2),
+                            "text": line,
+                        }
+                    )
 
-        async def on_translation(text: str, start: float) -> None:
+        async def on_translation(text: str, start: float, end: float) -> None:
             async with self:
                 if self._gen == gen and text.strip():
                     self.hindi_sentences.append(
                         {
                             "idx": len(self.hindi_sentences),
                             "at": audio.fmt_mmss(start),
-                            "start": round(start, 1),
+                            "start": round(start, 2),
+                            "end": round(end, 2),
                             "text": text,
                         }
                     )
@@ -197,6 +204,26 @@ class PlayerState(rx.State):
         )
 
     # ---- readouts ----
+
+    @rx.var
+    def en_text(self) -> str:
+        """The English transcript as flowing text."""
+        return " ".join(f["text"] for f in self.en_fragments)
+
+    @rx.var
+    def paired_sentences(self) -> list[dict]:
+        """Hindi sentences with the English words they translate
+        attached: the fragments whose span overlaps the sentence's
+        span in the original audio."""
+        out: list[dict] = []
+        for h in self.hindi_sentences:
+            en = " ".join(
+                f["text"]
+                for f in self.en_fragments
+                if f["end"] > h["start"] and f["start"] < h["end"]
+            )
+            out.append({**h, "en": en})
+        return out
 
     @rx.var
     def chunks_read(self) -> int:

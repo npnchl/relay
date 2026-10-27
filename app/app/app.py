@@ -14,31 +14,46 @@ MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 
 
 def hindi_row(sent: rx.Var) -> rx.Component:
-    """One translated sentence: play button, timestamp, Devanagari text."""
-    return rx.hstack(
-        rx.icon_button(
-            rx.icon("volume-2"),
-            on_click=PlayerState.play_sentence(sent["idx"]),
-            size="1",
-            variant="soft",
-            color_scheme=(
-                rx.cond(PlayerState.tts_idx == sent["idx"], "teal", "gray")
+    """One translated sentence, paired with the English words it
+    translates: speaker button, timestamp, Devanagari text, then the
+    matching English underneath in small grey."""
+    return rx.vstack(
+        rx.hstack(
+            rx.icon_button(
+                rx.icon("volume-2"),
+                on_click=PlayerState.play_sentence(sent["idx"]),
+                size="1",
+                variant="soft",
+                color_scheme=(
+                    rx.cond(PlayerState.tts_idx == sent["idx"], "teal", "gray")
+                ),
             ),
+            rx.text(
+                sent["at"],
+                size="1",
+                font_family=MONO,
+                color=rx.color("gray", 10),
+                white_space="nowrap",
+            ),
+            rx.text(
+                sent["text"],
+                size="3",
+                width="100%",
+            ),
+            align="start",
+            gap="3",
+            width="100%",
         ),
         rx.text(
-            sent["at"],
+            sent["en"],
             size="1",
             font_family=MONO,
             color=rx.color("gray", 10),
-            white_space="nowrap",
-        ),
-        rx.text(
-            sent["text"],
-            size="3",
+            padding_left="2.25rem",
+            line_height="1.5",
             width="100%",
         ),
-        align="start",
-        gap="3",
+        spacing="0",
         width="100%",
     )
 
@@ -94,7 +109,7 @@ def hindi_panel() -> rx.Component:
         PlayerState.sm_status,
         rx.scroll_area(
             rx.vstack(
-                rx.foreach(PlayerState.hindi_sentences, hindi_row),
+                rx.foreach(PlayerState.paired_sentences, hindi_row),
                 rx.cond(
                     PlayerState.hindi_sentences.length() == 0,
                     rx.text("…", size="2", color=rx.color("gray", 10)),

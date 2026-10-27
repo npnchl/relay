@@ -7,9 +7,10 @@ vendor streams translated text as AddTranslation messages, so the
 simultaneous-translation tradeoffs are handled inside their model -
 we just display what arrives.
 
-Pushes updates through callbacks: on_final(en_line),
-on_translation(hi_text, start_time), on_error(message).
-Pure provider logic - no Reflex imports, testable on its own.
+Pushes updates through callbacks with their spans in the original
+audio: on_final(en_line, start, end), on_translation(hi_text,
+start, end), on_error(message). Pure provider logic - no Reflex
+imports, testable on its own.
 """
 
 import asyncio
@@ -30,6 +31,18 @@ def fix_punct(tokens: list[str]) -> str:
     for p in PUNCT:
         out = out.replace(" " + p, p)
     return out.strip()
+
+
+def span_start(results: list[dict]) -> float:
+    """When this unit begins in the original audio."""
+    return results[0].get("start_time", 0.0) if results else 0.0
+
+
+def span_end(results: list[dict]) -> float:
+    """When this unit ends in the original audio."""
+    if not results:
+        return 0.0
+    return results[-1].get("end_time", span_start(results))
 
 
 class SpeechmaticsSession:
@@ -112,20 +125,27 @@ class SpeechmaticsSession:
                 msg = json.loads(await self._ws.recv())
                 kind = msg.get("message")
                 if kind == "AddTranscript":
+                    results = msg.get("results", [])
                     words = [
                         r.get("alternatives", [{}])[0].get("content", "")
-                        for r in msg.get("results", [])
+                        for r in results
                         if r.get("alternatives")
                     ]
-                    await on_final(fix_punct(words))
+                    await on_final(
+                        fix_punct(words),
+                        span_start(results),
+                        span_end(results),
+                    )
                 elif kind == "AddTranslation":
                     if msg.get("language") != TARGET_LANG:
                         continue
-                    contents = [
-                        r.get("content", "") for r in msg.get("results", [])
-                    ]
-                    start = msg["results"][0].get("start_time", 0.0) if msg.get("results") else 0.0
-                    await on_translation(fix_punct(contents), start)
+                    results = msg.get("results", [])
+                    contents = [r.get("content", "") for r in results]
+                    await on_translation(
+                        fix_punct(contents),
+                        span_start(results),
+                        span_end(results),
+                    )
                 elif kind == "EndOfTranscript":
                     return
                 elif kind == "Error":
