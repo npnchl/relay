@@ -163,6 +163,10 @@ class SonioxSession:
                     "sample_rate": 16000,
                     "num_channels": 1,
                     "enable_endpoint_detection": True,
+                    # negative sensitivity: wait longer before committing
+                    # (fewer, later endpoints -> the tail keeps refining
+                    # instead of freezing early)
+                    "endpoint_sensitivity": -0.3,
                     "client_reference_id": (
                         "live-"
                         + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
