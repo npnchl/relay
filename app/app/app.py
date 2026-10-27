@@ -42,9 +42,21 @@ def hindi_row(sent: rx.Var) -> rx.Component:
             flex_shrink="0",
         ),
         rx.vstack(
-            rx.text(
-                sent["text"],
-                size="3",
+            rx.hstack(
+                rx.text(
+                    sent["text"],
+                    size="3",
+                    width="100%",
+                ),
+                # the vendor passed English through inside the Hindi:
+                # mark it so it counts as evidence when grading
+                rx.cond(
+                    sent["flag"],
+                    rx.badge(
+                        "untranslated", color_scheme="amber", variant="soft", size="1"
+                    ),
+                ),
+                align="center",
                 width="100%",
             ),
             rx.cond(

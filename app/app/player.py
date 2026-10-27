@@ -14,11 +14,16 @@ the browser for ear-grading.
 import asyncio
 import base64
 import os
+import re
 
 import reflex as rx
 
 from . import audio, azure_tts
 from .providers import SpeechmaticsSession
+
+# three or more consecutive Latin-letter words inside a Hindi
+# sentence: the vendor passed source text through untranslated
+LATIN_RUN = re.compile(r"[A-Za-z']+(?:\s+[A-Za-z']+){2,}")
 
 
 class PlayerState(rx.State):
@@ -117,6 +122,7 @@ class PlayerState(rx.State):
                             "start": round(start, 2),
                             "end": round(end, 2),
                             "text": text,
+                            "flag": bool(LATIN_RUN.search(text)),
                         }
                     )
 
