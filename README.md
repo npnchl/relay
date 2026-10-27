@@ -52,6 +52,32 @@ uv run python tools/compare.py patches/preaching.baseline.json \
 
 Type checks: `uv run mypy tools/` (strict).
 
+## Speechmatics Enhanced run configuration
+
+All Speechmatics runs (`tools/stream_speechmatics.py`) use these settings:
+
+- **Endpoint:** `wss://eu.rt.speechmatics.com/v2` (EU region, for data
+  residency), auth via `SPEECHMATICS_API_KEY` (Bearer token, from `.env`).
+- **Language:** `en`
+- **Operating point:** `enhanced` (the Enhanced realtime model)
+- **Partials:** disabled (`enable_partials: false`) — only final results are
+  kept, so text never rewrites. Finals arrive progressively (small chunks
+  roughly 0.5-1 s behind the speech), not once per sentence. End-of-session
+  flush takes another ~30 s after the last audio, irrelevant for live use.
+- **No custom dictionary, no other options set** — the model runs with all
+  defaults.
+- **Audio fed to the API:** 16 kHz mono 16-bit PCM (`prep.py` output), sent in
+  100 ms chunks (3,200 bytes each) at true realtime pace — the server sees
+  a live stream, not a batch upload. Session closes with `EndOfStream`.
+
+**Full-sermon run (`full-sermon-enhanced`, 30 min Matthew 3 sermon):**
+1800 s audio → 1828 s wall, 5,400 words, first final at +2.9 s from session
+start. Artifacts in `runs/`: per-word timestamps (`words/*.words.jsonl`),
+plain transcript, ~30 s timestamped transcript, and run summary.
+
+Known gap: arrival times per result are not logged, so end-to-end caption
+latency is estimated (above), not measured exactly.
+
 ## Reading the results
 
 - `runs/reports/sweep-report.txt` — the verdict table (speed, first-word latency,
