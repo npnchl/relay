@@ -5,6 +5,7 @@ description = "relay translation evaluation — live translation arms with TTS r
 requires-python = ">=3.12"
 dependencies = [
     "reflex",
+    "websockets>=17.3",
 ]
 
 [tool.uv]
