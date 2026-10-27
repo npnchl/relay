@@ -88,8 +88,10 @@ class PlayerState(rx.State):
 
     sm_status: str = ""
     sm_text: str = ""
+    sm_pending: str = ""
     soniox_status: str = ""
     soniox_text: str = ""
+    soniox_pending: str = ""
 
     # backend-only: bumping this invalidates the in-flight streamer
     _gen: int = 0
@@ -126,20 +128,32 @@ class PlayerState(rx.State):
             self.chunks_sent = 0
             self.sm_status = ""
             self.sm_text = ""
+            self.sm_pending = ""
             self.soniox_status = ""
             self.soniox_text = ""
+            self.soniox_pending = ""
 
         async def on_sm_final(line: str) -> None:
             async with self:
                 if self._gen == gen and line.strip():
                     self.sm_text = (self.sm_text + " " + line).strip()
+                    self.sm_pending = ""
 
-        on_noop = _noop
+        async def on_sm_pending(text: str) -> None:
+            async with self:
+                if self._gen == gen and text.strip():
+                    self.sm_pending = text
+
+        async def on_sx_pending(text: str) -> None:
+            async with self:
+                if self._gen == gen and text.strip():
+                    self.soniox_pending = text
 
         async def on_sx_final(line: str) -> None:
             async with self:
                 if self._gen == gen and line.strip():
                     self.soniox_text = (self.soniox_text + " " + line).strip()
+                    self.soniox_pending = ""
 
 
 
@@ -158,10 +172,10 @@ class PlayerState(rx.State):
         sx_key = os.environ.get("SONIOX_API_KEY")
         if sm_key:
             sm = SpeechmaticsSession(sm_key)
-            sessions.append((sm, on_sm_final, on_noop, on_sm_error))
+            sessions.append((sm, on_sm_final, on_sm_pending, on_sm_error))
         if sx_key:
             sx = SonioxSession(sx_key)
-            sessions.append((sx, on_sx_final, on_noop, on_sx_error))
+            sessions.append((sx, on_sx_final, on_sx_pending, on_sx_error))
         async with self:
             if not sm_key:
                 self.sm_status = "no SPEECHMATICS_API_KEY"
@@ -229,6 +243,7 @@ def caption_panel(
     title: str,
     status: rx.Var,
     text: rx.Var,
+    pending: rx.Var,
 ) -> rx.Component:
     return rx.card(
         rx.vstack(
@@ -244,11 +259,24 @@ def caption_panel(
                 align="center",
             ),
             rx.scroll_area(
-                rx.text(
-                    text,
-                    size="3",
-                    font_family=MONO,
-                    line_height="1.7",
+                rx.vstack(
+                    rx.text(
+                        text,
+                        size="3",
+                        font_family=MONO,
+                        line_height="1.7",
+                    ),
+                    rx.text(
+                        pending,
+                        size="3",
+                        color=rx.color("gray", 10),
+                        italic=True,
+                        font_family=MONO,
+                        line_height="1.7",
+                    ),
+                    width="100%",
+                    align="start",
+                    spacing="1",
                 ),
                 width="100%",
                 height="45vh",
@@ -293,11 +321,13 @@ def index() -> rx.Component:
                         "Speechmatics Enhanced",
                         PlayerState.sm_status,
                         PlayerState.sm_text,
+                        PlayerState.sm_pending,
                     ),
                     caption_panel(
                         "Soniox stt-rt-v5",
                         PlayerState.soniox_status,
                         PlayerState.soniox_text,
+                        PlayerState.soniox_pending,
                     ),
                     style={
                         "display": "grid",
