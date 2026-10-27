@@ -335,91 +335,255 @@ class CaptionState(rx.State):
         async with self:
             self.soniox_status = "stopped"
 
-
-def caption_panel(title: str, status: rx.Var, finals: rx.Var, pending: rx.Var,
-                  first_a_label: str, first_a: rx.Var,
-                  first_b_label: str, first_b: rx.Var) -> rx.Component:
-    return rx.card(
-        rx.hstack(
-            rx.heading(title, size="4"),
-            rx.badge(status),
-            rx.spacer(),
-            rx.text(f"{first_a_label}: ", rx.code(first_a), size="2"),
-            rx.text(f"{first_b_label}: ", rx.code(first_b), size="2"),
-            width="100%",
+def status_badge(status: rx.Var) -> rx.Component:
+    return rx.match(
+        status,
+        ("live", rx.badge("live", color_scheme="grass", variant="solid")),
+        (
+            status.startswith("error"),
+            rx.badge(status, color_scheme="red", variant="soft"),
         ),
-        rx.divider(),
-        rx.scroll_area(
-            rx.vstack(
-                rx.foreach(finals, lambda line: rx.text(line, size="3")),
-                rx.text(pending, size="3", color=rx.color("gray", 9), font_style="italic"),
+        (
+            status.startswith("connecting"),
+            rx.badge("connecting…", color_scheme="amber", variant="soft"),
+        ),
+        rx.badge(status, color_scheme="gray", variant="soft"),
+    )
+
+
+def stat_chip(label: str, value: rx.Var) -> rx.Component:
+    return rx.vstack(
+        rx.text(
+            value,
+            size="4",
+            weight="bold",
+            font_family="ui-monospace, Menlo, monospace",
+        ),
+        rx.text(label, size="1", color=rx.color("gray", 10), wrap="nowrap"),
+        spacing="1",
+        align="center",
+        padding_x="4",
+    )
+
+
+def caption_panel(
+    title: str,
+    accent: str,
+    status: rx.Var,
+    finals: rx.Var,
+    pending: rx.Var,
+    first_a_label: str,
+    first_a: rx.Var,
+    first_b_label: str,
+    first_b: rx.Var,
+) -> rx.Component:
+    return rx.card(
+        rx.vstack(
+            rx.hstack(
+                rx.box(
+                    rx.box(
+                        background=accent,
+                        width="10px",
+                        height="10px",
+                        border_radius="50%",
+                        margin="2px",
+                    ),
+                    background="color-mix(in srgb, " + accent + " 20%, transparent)",
+                    border="1px solid " + accent,
+                    border_radius="50%",
+                    padding="2px",
+                ),
+                rx.heading(title, size="5", weight="medium"),
+                status_badge(status),
+                rx.spacer(),
+                rx.hstack(
+                    stat_chip(first_a_label, first_a),
+                    rx.divider(size="2", orientation="vertical"),
+                    stat_chip(first_b_label, first_b),
+                    spacing="2",
+                    align="center",
+                ),
                 width="100%",
-                align="start",
+                align="center",
             ),
-            width="100%",
-            height="55vh",
+            rx.scroll_area(
+                rx.vstack(
+                    rx.foreach(
+                        finals,
+                        lambda line: rx.text(
+                            line,
+                            size="3",
+                            font_family="ui-monospace, Menlo, monospace",
+                            line_height="1.7",
+                            padding_left="0.5em",
+                            border_left="2px solid color-mix(in srgb, "
+                            + accent
+                            + " 25%, transparent)",
+                        ),
+                    ),
+                    rx.text(
+                        pending,
+                        size="3",
+                        color=rx.color("gray", 10),
+                        italic=True,
+                        font_family="ui-monospace, Menlo, monospace",
+                        line_height="1.7",
+                    ),
+                    width="100%",
+                    align="start",
+                    spacing="1",
+                ),
+                width="100%",
+                height="52vh",
+            ),
         ),
         width="100%",
+        padding="6",
+        size="3",
     )
 
 
 def index() -> rx.Component:
-    return rx.container(
-        rx.heading("relay — live caption compare", size="6"),
-        rx.text(
-            "Play the audio, seek anywhere, hit Start — both providers "
-            "transcribe from that point at realtime pace. Grey = partial "
-            "(refining), solid = final. Press Stop, seek, Start again to "
-            "re-sync after scrubbing.",
-            size="2",
-            color=rx.color("gray", 11),
+    return rx.theme(
+        rx.center(
+            rx.vstack(
+                rx.hstack(
+                    rx.vstack(
+                        rx.heading(
+                            "relay",
+                            size="8",
+                            weight="bold",
+                            background_image=(
+                                "linear-gradient(90deg, var(--teal-9), var(--cyan-9))"
+                            ),
+                            background_clip="text",
+                            as_="span",
+                        ),
+                        rx.heading(
+                            "live caption compare",
+                            size="8",
+                            weight="bold",
+                            as_="span",
+                        ),
+                        rx.text(
+                            "Play the sermon, seek anywhere, hit Start — both providers "
+                            "transcribe that same stretch of audio live, side by side.",
+                            size="3",
+                            color=rx.color("gray", 11),
+                        ),
+                        spacing="2",
+                        align="start",
+                    ),
+                    rx.spacer(),
+                    rx.color_mode.button(position="top-right"),
+                    width="100%",
+                    align="start",
+                ),
+                rx.card(
+                    rx.vstack(
+                        rx.el.audio(
+                            src="/sermon-16k.wav",
+                            id="sermon-audio",
+                            controls=True,
+                            width="100%",
+                        ),
+                        rx.hstack(
+                            rx.button(
+                                "Start captions",
+                                rx.icon("play", size=16),
+                                on_click=CaptionState.read_position_and_start,
+                                disabled=CaptionState.running,
+                                size="3",
+                                variant="solid",
+                            ),
+                            rx.button(
+                                "Stop",
+                                rx.icon("square", size=16),
+                                on_click=CaptionState.stop_streams,
+                                disabled=~CaptionState.running,
+                                size="3",
+                                variant="soft",
+                                color_scheme="red",
+                            ),
+                            rx.spacer(),
+                            rx.cond(
+                                CaptionState.running,
+                                rx.hstack(
+                                    rx.box(
+                                        width="8px",
+                                        height="8px",
+                                        border_radius="50%",
+                                        background=rx.color("grass", 9),
+                                    ),
+                                    rx.text(
+                                        "streaming from ",
+                                        rx.code(CaptionState.start_pos_label),
+                                        size="2",
+                                        color=rx.color("gray", 11),
+                                    ),
+                                ),
+                                rx.text(
+                                    "idle — press play, seek, then Start",
+                                    size="2",
+                                    color=rx.color("gray", 10),
+                                ),
+                            ),
+                            width="100%",
+                            align="center",
+                        ),
+                        spacing="4",
+                        width="100%",
+                    ),
+                    width="100%",
+                    padding="6",
+                    size="3",
+                ),
+                rx.grid(
+                    caption_panel(
+                        "Speechmatics Enhanced",
+                        "var(--teal-9)",
+                        CaptionState.sm_status,
+                        CaptionState.sm_finals,
+                        CaptionState.sm_pending,
+                        "1st partial",
+                        CaptionState.sm_first_partial_ms,
+                        "1st final",
+                        CaptionState.sm_first_final_ms,
+                    ),
+                    caption_panel(
+                        "Soniox stt-rt-v5",
+                        "var(--violet-9)",
+                        CaptionState.soniox_status,
+                        CaptionState.soniox_finals,
+                        CaptionState.soniox_pending,
+                        "1st token",
+                        CaptionState.soniox_first_token_ms,
+                        "1st final",
+                        CaptionState.soniox_first_final_ms,
+                    ),
+                    columns="2",
+                    gap="4",
+                    width="100%",
+                ),
+                rx.text(
+                    "grey italic = partial / refining · solid = final · "
+                    "[MM:SS] marks sermon time · billing runs only while captions stream",
+                    size="1",
+                    color=rx.color("gray", 9),
+                    align="center",
+                    width="100%",
+                ),
+                spacing="5",
+                width="100%",
+                max_width="1160px",
+                padding="4",
+            ),
+            min_height="92vh",
+            padding="4",
         ),
-        rx.el.audio(
-            src="/sermon-16k.wav",
-            id="sermon-audio",
-            controls=True,
-            width="100%",
-        ),
-        rx.hstack(
-            rx.button(
-                "Start captions",
-                on_click=CaptionState.read_position_and_start,
-                disabled=CaptionState.running,
-            ),
-            rx.button(
-                "Stop",
-                on_click=CaptionState.stop_streams,
-                disabled=~CaptionState.running,
-                color_scheme="red",
-            ),
-            rx.cond(
-                CaptionState.running,
-                rx.text("streaming from ", rx.code(CaptionState.start_pos_label)),
-                rx.text("idle"),
-            ),
-        ),
-        rx.grid(
-            caption_panel(
-                "Speechmatics Enhanced",
-                CaptionState.sm_status,
-                CaptionState.sm_finals,
-                CaptionState.sm_pending,
-                "1st partial", CaptionState.sm_first_partial_ms,
-                "1st final", CaptionState.sm_first_final_ms,
-            ),
-            caption_panel(
-                "Soniox stt-rt-v5",
-                CaptionState.soniox_status,
-                CaptionState.soniox_finals,
-                CaptionState.soniox_pending,
-                "1st token", CaptionState.soniox_first_token_ms,
-                "1st final", CaptionState.soniox_first_final_ms,
-            ),
-            columns="2",
-            width="100%",
-        ),
-        max_width="1200px",
-        margin_y="4",
+        appearance="dark",
+        accent_color="teal",
+        radius="large",
     )
 
 
