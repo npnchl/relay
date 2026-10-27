@@ -10,6 +10,8 @@ import wave
 from pathlib import Path
 
 import reflex as rx
+from reflex_components_react_player.audio import Audio
+from reflex_components_react_player.react_player import ReactPlayerEvent
 
 AUDIO_PATH = Path(__file__).resolve().parents[1] / "assets" / "sermon-16k.wav"
 
@@ -17,6 +19,29 @@ AUDIO_PATH = Path(__file__).resolve().parents[1] / "assets" / "sermon-16k.wav"
 with wave.open(str(AUDIO_PATH), "rb") as _w:
     SERMON_PCM = _w.readframes(_w.getnframes())
 DURATION_SECS = len(SERMON_PCM) // 32000  # 16 kHz * 2 bytes, mono
+
+
+# The bundled rx.audio component's event signatures read
+# event.target.api.playerInfo.*, which does not exist in the pinned
+# react-player 3.4.0 (a plain native <audio> element) - every value
+# extracted as 0. These signatures read the native element directly.
+def _current_time(event: ReactPlayerEvent) -> list:
+    return [event["target"]["currentTime"].to(float)]  # type: ignore[attr-defined]
+
+
+def _duration(event: ReactPlayerEvent) -> list:
+    return [event["target"]["duration"].to(float)]  # type: ignore[attr-defined]
+
+
+class FixedAudio(Audio):
+    """rx.audio with event signatures matching react-player 3.4.0."""
+
+
+_triggers = dict(Audio.get_event_triggers())
+_triggers["on_time_update"] = _current_time
+_triggers["on_duration_change"] = _duration
+_triggers["on_seeked"] = _current_time
+FixedAudio._event_triggers_cache = _triggers
 
 
 def fmt_mmss(secs: float) -> str:
@@ -49,7 +74,7 @@ def index() -> rx.Component:
                     size="3",
                     color=rx.color("gray", 11),
                 ),
-                rx.audio(
+                FixedAudio.create(
                     src="/sermon-16k.wav",
                     controls=True,
                     width="100%",
