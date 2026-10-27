@@ -95,8 +95,12 @@ class PlayerState(rx.State):
         return int(self.position * 1000 / audio.CHUNK_MS)
 
     @rx.var
-    def position_label(self) -> str:
-        return f"{audio.fmt_mmss(self.position)} / {audio.fmt_mmss(audio.DURATION_SECS)}"
+    def elapsed_label(self) -> str:
+        return audio.fmt_mmss(self.position)
+
+    @rx.var
+    def remaining_label(self) -> str:
+        return "-" + audio.fmt_mmss(audio.DURATION_SECS - self.position)
 
     @rx.var
     def chunk_label(self) -> str:

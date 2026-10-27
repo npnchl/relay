@@ -18,12 +18,20 @@ def index() -> rx.Component:
             rx.vstack(
                 rx.heading("relay — virtual player", size="6"),
                 rx.hstack(
-                    rx.button(
-                        rx.cond(PlayerState.playing, "Pause", "Play"),
+                    rx.icon_button(
+                        rx.cond(
+                            PlayerState.playing,
+                            rx.icon("pause"),
+                            rx.icon("play"),
+                        ),
                         on_click=PlayerState.toggle,
-                        size="3",
-                        px="5",
-                        font_weight="medium",
+                    ),
+                    rx.text(
+                        PlayerState.elapsed_label,
+                        size="2",
+                        font_family=MONO,
+                        white_space="nowrap",
+                        color=rx.color("gray", 11),
                     ),
                     rx.slider(
                         value=[PlayerState.position],
@@ -35,7 +43,7 @@ def index() -> rx.Component:
                         flex_grow="1",
                     ),
                     rx.text(
-                        PlayerState.position_label,
+                        PlayerState.remaining_label,
                         size="2",
                         font_family=MONO,
                         white_space="nowrap",
@@ -43,7 +51,7 @@ def index() -> rx.Component:
                     ),
                     align="center",
                     width="100%",
-                    gap="5",
+                    gap="4",
                 ),
                 rx.text(
                     PlayerState.chunk_label,
