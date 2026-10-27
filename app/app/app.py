@@ -122,14 +122,17 @@ class PlayerState(rx.State):
 
     def _append_words(self, which: str, text: str) -> None:
         """Append caption text; a new line starts only when the previous
-        line ended a sentence, with a word cap for run-on speech."""
-        finals = self.sm_finals if which == "sm" else self.soniox_finals
+        line ended a sentence, with a word cap for run-on speech.
+
+        Builds a fresh list and assigns the whole state var - in-place
+        index writes (finals[-1] = ...) are not picked up by Reflex's
+        change tracking, which made every burst render as its own line.
+        """
         text = text.strip()
         if not text:
             return
-        sentence_done = (
-            finals and finals[-1].endswith((".", "?", "!", '"', "'"))
-        )
+        finals = list(self.sm_finals if which == "sm" else self.soniox_finals)
+        sentence_done = finals and finals[-1].endswith((".", "?", "!", '"', "'"))
         if not finals or sentence_done:
             finals.append(text)
         else:
@@ -140,6 +143,10 @@ class PlayerState(rx.State):
             finals[-1] = " ".join(words[:-MAX_LINE_WORDS])
             finals.append(" ".join(words[-MAX_LINE_WORDS:]))
         del finals[: max(0, len(finals) - MAX_LINES)]
+        if which == "sm":
+            self.sm_finals = finals
+        else:
+            self.soniox_finals = finals
 
     # ---- player-locked chunk streamer fanning out to providers ----
 
