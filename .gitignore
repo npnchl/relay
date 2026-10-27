@@ -4,4 +4,7 @@ runs/
 __pycache__/
 .mypy_cache/
 patches/
+app/assets/
+.web/
+.reflex/
 .env
