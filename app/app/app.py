@@ -17,52 +17,48 @@ def index() -> rx.Component:
         rx.el.div(
             rx.vstack(
                 rx.heading("relay — virtual player", size="6"),
-                rx.vstack(
-                    rx.hstack(
-                        rx.icon_button(
-                            rx.cond(
-                                PlayerState.playing,
-                                rx.icon("pause"),
-                                rx.icon("play"),
-                            ),
-                            on_click=PlayerState.toggle,
+                rx.hstack(
+                    rx.icon_button(
+                        rx.cond(
+                            PlayerState.playing,
+                            rx.icon("pause"),
+                            rx.icon("play"),
                         ),
-                        rx.text(
-                            PlayerState.elapsed_label,
-                            size="2",
-                            font_family=MONO,
-                            white_space="nowrap",
-                            color=rx.color("gray", 11),
-                        ),
-                        rx.slider(
-                            value=[PlayerState.position],
-                            min=0,
-                            max=audio.DURATION_SECS,
-                            step=1,
-                            on_change=PlayerState.drag,
-                            on_value_commit=PlayerState.seek,
-                            flex_grow="1",
-                        ),
-                        rx.text(
-                            PlayerState.remaining_label,
-                            size="2",
-                            font_family=MONO,
-                            white_space="nowrap",
-                            color=rx.color("gray", 11),
-                        ),
-                        align="center",
-                        width="100%",
-                        gap="4",
+                        on_click=PlayerState.toggle,
+                    ),
+                    rx.text(
+                        PlayerState.elapsed_label,
+                        size="2",
+                        font_family=MONO,
+                        white_space="nowrap",
+                        color=rx.color("gray", 11),
+                    ),
+                    rx.slider(
+                        value=[PlayerState.position],
+                        min=0,
+                        max=audio.DURATION_SECS,
+                        step=1,
+                        on_change=PlayerState.drag,
+                        on_value_commit=PlayerState.seek,
+                        flex_grow="1",
+                    ),
+                    rx.text(
+                        PlayerState.remaining_label,
+                        size="2",
+                        font_family=MONO,
+                        white_space="nowrap",
+                        color=rx.color("gray", 11),
                     ),
                     rx.text(
                         PlayerState.chunk_label,
                         size="1",
-                        color=rx.color("gray", 10),
                         font_family=MONO,
-                        align_self="start",
+                        white_space="nowrap",
+                        color=rx.color("gray", 10),
                     ),
-                    spacing="1",
+                    align="center",
                     width="100%",
+                    gap="4",
                 ),
                 spacing="5",
                 align="center",
