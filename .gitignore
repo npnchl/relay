@@ -5,3 +5,7 @@ __pycache__/
 .mypy_cache/
 patches/
 .env
+app/assets/
+app/.web/
+.web/
+.reflex/
