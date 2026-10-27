@@ -226,6 +226,14 @@ class PlayerState(rx.State):
                     self.streaming = False
 
     @rx.var
+    def sm_display(self) -> str:
+        return (self.sm_text + " " + self.sm_pending).strip()
+
+    @rx.var
+    def soniox_display(self) -> str:
+        return (self.soniox_text + " " + self.soniox_pending).strip()
+
+    @rx.var
     def position_label(self) -> str:
         return f"{fmt_mmss(self.position)} / {fmt_mmss(self.duration)}"
 
@@ -243,7 +251,6 @@ def caption_panel(
     title: str,
     status: rx.Var,
     text: rx.Var,
-    pending: rx.Var,
 ) -> rx.Component:
     return rx.card(
         rx.vstack(
@@ -259,24 +266,11 @@ def caption_panel(
                 align="center",
             ),
             rx.scroll_area(
-                rx.vstack(
-                    rx.text(
-                        text,
-                        size="3",
-                        font_family=MONO,
-                        line_height="1.7",
-                    ),
-                    rx.text(
-                        pending,
-                        size="3",
-                        color=rx.color("gray", 10),
-                        italic=True,
-                        font_family=MONO,
-                        line_height="1.7",
-                    ),
-                    width="100%",
-                    align="start",
-                    spacing="1",
+                rx.text(
+                    text,
+                    size="3",
+                    font_family=MONO,
+                    line_height="1.7",
                 ),
                 width="100%",
                 height="45vh",
@@ -320,14 +314,12 @@ def index() -> rx.Component:
                     caption_panel(
                         "Speechmatics Enhanced",
                         PlayerState.sm_status,
-                        PlayerState.sm_text,
-                        PlayerState.sm_pending,
+                        PlayerState.sm_display,
                     ),
                     caption_panel(
                         "Soniox stt-rt-v5",
                         PlayerState.soniox_status,
-                        PlayerState.soniox_text,
-                        PlayerState.soniox_pending,
+                        PlayerState.soniox_display,
                     ),
                     style={
                         "display": "grid",
