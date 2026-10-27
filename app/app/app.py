@@ -27,8 +27,6 @@ ENV_PATH = APP_DIR.parent / ".env"
 BYTES_PER_SEC = 32000  # 16 kHz * 2 bytes, mono
 CHUNK_MS = 100
 CHUNK_BYTES = int(BYTES_PER_SEC * CHUNK_MS / 1000)
-MAX_LINE_WORDS = 15
-MAX_LINES = 300
 
 
 def load_env() -> None:
@@ -89,9 +87,9 @@ class PlayerState(rx.State):
     chunks_sent: int = 0
 
     sm_status: str = ""
-    sm_finals: list[str] = []
+    sm_text: str = ""
     soniox_status: str = ""
-    soniox_finals: list[str] = []
+    soniox_text: str = ""
 
     # backend-only: bumping this invalidates the in-flight streamer
     _gen: int = 0
@@ -118,36 +116,6 @@ class PlayerState(rx.State):
             return PlayerState.stream_chunks(self._gen, position)
         return None
 
-    # ---- caption line helpers ----
-
-    def _append_words(self, which: str, text: str) -> None:
-        """Append caption text; a new line starts only when the previous
-        line ended a sentence, with a word cap for run-on speech.
-
-        Builds a fresh list and assigns the whole state var - in-place
-        index writes (finals[-1] = ...) are not picked up by Reflex's
-        change tracking, which made every burst render as its own line.
-        """
-        text = text.strip()
-        if not text:
-            return
-        finals = list(self.sm_finals if which == "sm" else self.soniox_finals)
-        sentence_done = finals and finals[-1].endswith((".", "?", "!", '"', "'"))
-        if not finals or sentence_done:
-            finals.append(text)
-        else:
-            finals[-1] = finals[-1] + " " + text
-        # hard cap for long unpunctuated speech
-        if len(finals[-1].split()) > MAX_LINE_WORDS:
-            words = finals[-1].split()
-            finals[-1] = " ".join(words[:-MAX_LINE_WORDS])
-            finals.append(" ".join(words[-MAX_LINE_WORDS:]))
-        del finals[: max(0, len(finals) - MAX_LINES)]
-        if which == "sm":
-            self.sm_finals = finals
-        else:
-            self.soniox_finals = finals
-
     # ---- player-locked chunk streamer fanning out to providers ----
 
     @rx.event(background=True)
@@ -157,21 +125,21 @@ class PlayerState(rx.State):
             self.stream_pos = start_pos
             self.chunks_sent = 0
             self.sm_status = ""
-            self.sm_finals = []
+            self.sm_text = ""
             self.soniox_status = ""
-            self.soniox_finals = []
+            self.soniox_text = ""
 
         async def on_sm_final(line: str) -> None:
             async with self:
-                if self._gen == gen:
-                    self._append_words("sm", line)
+                if self._gen == gen and line.strip():
+                    self.sm_text = (self.sm_text + " " + line).strip()
 
         on_noop = _noop
 
         async def on_sx_final(line: str) -> None:
             async with self:
-                if self._gen == gen:
-                    self._append_words("soniox", line)
+                if self._gen == gen and line.strip():
+                    self.soniox_text = (self.soniox_text + " " + line).strip()
 
 
 
@@ -260,7 +228,7 @@ MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 def caption_panel(
     title: str,
     status: rx.Var,
-    finals: rx.Var,
+    text: rx.Var,
 ) -> rx.Component:
     return rx.card(
         rx.vstack(
@@ -276,16 +244,11 @@ def caption_panel(
                 align="center",
             ),
             rx.scroll_area(
-                rx.vstack(
-                    rx.foreach(finals, lambda line: rx.text(
-                        line,
-                        size="3",
-                        font_family=MONO,
-                        line_height="1.7",
-                    )),
-                    width="100%",
-                    align="start",
-                    spacing="1",
+                rx.text(
+                    text,
+                    size="3",
+                    font_family=MONO,
+                    line_height="1.7",
                 ),
                 width="100%",
                 height="45vh",
@@ -329,12 +292,12 @@ def index() -> rx.Component:
                     caption_panel(
                         "Speechmatics Enhanced",
                         PlayerState.sm_status,
-                        PlayerState.sm_finals,
+                        PlayerState.sm_text,
                     ),
                     caption_panel(
                         "Soniox stt-rt-v5",
                         PlayerState.soniox_status,
-                        PlayerState.soniox_finals,
+                        PlayerState.soniox_text,
                     ),
                     style={
                         "display": "grid",
