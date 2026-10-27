@@ -14,10 +14,11 @@ MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 
 
 def hindi_row(sent: rx.Var) -> rx.Component:
-    """One translated sentence, paired with the English words it
-    translates: speaker button, timestamp, Devanagari text, then the
-    matching English underneath in small grey."""
-    return rx.vstack(
+    """One translated sentence in the stacked layout: a fixed rail
+    with play button + timestamp, then the Hindi prominent with the
+    English words it translates muted directly beneath it."""
+    return rx.hstack(
+        # fixed-width rail: play button + timestamp, aligned across rows
         rx.hstack(
             rx.icon_button(
                 rx.icon("volume-2"),
@@ -35,25 +36,33 @@ def hindi_row(sent: rx.Var) -> rx.Component:
                 color=rx.color("gray", 10),
                 white_space="nowrap",
             ),
+            align="center",
+            gap="2",
+            width="4.5rem",
+            flex_shrink="0",
+        ),
+        rx.vstack(
             rx.text(
                 sent["text"],
                 size="3",
                 width="100%",
             ),
-            align="start",
-            gap="3",
+            rx.cond(
+                sent["en"] != "",
+                rx.text(
+                    sent["en"],
+                    size="1",
+                    font_family=MONO,
+                    color=rx.color("gray", 10),
+                    line_height="1.5",
+                    width="100%",
+                ),
+            ),
+            spacing="1",
             width="100%",
         ),
-        rx.text(
-            sent["en"],
-            size="1",
-            font_family=MONO,
-            color=rx.color("gray", 10),
-            padding_left="2.25rem",
-            line_height="1.5",
-            width="100%",
-        ),
-        spacing="0",
+        align="start",
+        gap="3",
         width="100%",
     )
 
