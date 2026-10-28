@@ -76,11 +76,11 @@ class SpeechmaticsSession:
                         "language": "en",
                         "model": "enhanced",
                         "enable_partials": False,
-                        "max_delay": 1.5,
+                        "max_delay": 4.0,
                         "max_delay_mode": "flexible",
-                        # tuning inputs for translation quality: fewer
-                        # false full stops at pauses, cleaner text in
-                        "punctuation_overrides": {"sensitivity": 0.12},
+                        # 0.12 merged real sentences; 0.5 seeded false
+                        # stops that broke the vendor's translation units
+                        "punctuation_overrides": {"sensitivity": 0.25},
                         "transcript_filtering_config": {
                             "remove_disfluencies": True,
                         },

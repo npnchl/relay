@@ -81,28 +81,33 @@ captions tolerate that lag (people read at their own pace). Therefore:
 
 ## Tuning plan (in progress)
 
-Speechmatics input-side settings to test, aimed at the exact defects
-above (tuning happens on this branch, ear-graded; STT accuracy
-regression checked on transcription-accuracy against the solaris-3
-baseline — note: that harness normalises punctuation, so fake stops
-won't show there; punctuation work belongs here):
+Speechmatics input-side settings, aimed at the exact defects above.
+Diagnostic window: 95 s of the same passage (absolute 86-181 s),
+"passthroughs" = untranslated English on the Hindi channel.
 
-1. ~~`punctuation_overrides.sensitivity`~~ — **applied: 0.12**
-   (default 0.5). Big effect: over the 95 s diagnostic window the
-   two untranslated passthroughs dropped to one, and a ~19 s unit
-   translated fine — killing the "long units always fail" theory.
-   The cause was malformed punctuation breaking their translator's
-   segmentation, not unit length. One ~11.7 s passthrough remains
-   (relative 38.68-50.40, "So in chapter 24 alas..."). Field shape:
-   `punctuation_overrides: {sensitivity}` inside transcription_config.
-2. ~~Disfluency removal~~ — **applied: `transcript_filtering_config:
-   {remove_disfluencies: true}`** (not directly in
-   transcription_config — the server rejects it there).
+| config | passthroughs | notes |
+|---|---|---|
+| delay 1.5/2.0/4.0, sensitivity 0.5 | 2 | false stop after "infancy" persists at every delay |
+| delay 8.0, sensitivity 0.5 | 2 | delay is NOT the punctuation lever (docs cap says 4; server accepts 8 silently) |
+| delay 1.5, sensitivity 0.12 | 1 | false stop gone, but real sentences merge (ear-graded too sparse) |
+| **delay 4.0, sensitivity 0.25** | **0** | **current setting**; false stop gone, questions survive, all spans translated |
+
+Applied field shapes (server-validated):
+- `punctuation_overrides: {"sensitivity": 0.25}` inside transcription_config
+- `transcript_filtering_config: {"remove_disfluencies": true}` — NOT
+  directly in transcription_config (server rejects it there)
+- disfluency removal kept on at every sensitivity
+
+Open items:
+1. Single-run numbers so far; rerun the window at the chosen setting
+   to check run-to-run variance.
+2. Hindi quality is ear-graded, not script-graded (early note:
+   "internal combustion engine" -> आंतरिक जलन इंजन looked literal).
 3. `output_locale: en-GB` — free, matches the (British) pastor.
-4. Audio filtering — low priority; recording is clean, real church
-   acoustics would be the reason.
-5. If vendor defects persist: LLM translation arm, sentence-buffered —
-   our own chunking, one sentence behind by design.
+4. STT accuracy regression check on transcription-accuracy (its
+   harness normalises punctuation, so punctuation itself must be
+   judged by ear here).
+5. If vendor defects resurface: LLM translation arm, sentence-buffered.
 
 ## Current uncommitted state
 
