@@ -79,7 +79,7 @@ captions tolerate that lag (people read at their own pace). Therefore:
   finals as they commit, so their latency advantage is real but their
   quality ceiling is low for our use case.
 
-## Tuning plan (next)
+## Tuning plan (in progress)
 
 Speechmatics input-side settings to test, aimed at the exact defects
 above (tuning happens on this branch, ear-graded; STT accuracy
@@ -87,9 +87,17 @@ regression checked on transcription-accuracy against the solaris-3
 baseline — note: that harness normalises punctuation, so fake stops
 won't show there; punctuation work belongs here):
 
-1. `transcription_config.punctuation_overrides` — sensitivity /
-   permitted marks, targeting finding 3.
-2. Disfluency removal ("um/uh/you know") — cleaner translation input.
+1. ~~`punctuation_overrides.sensitivity`~~ — **applied: 0.12**
+   (default 0.5). Big effect: over the 95 s diagnostic window the
+   two untranslated passthroughs dropped to one, and a ~19 s unit
+   translated fine — killing the "long units always fail" theory.
+   The cause was malformed punctuation breaking their translator's
+   segmentation, not unit length. One ~11.7 s passthrough remains
+   (relative 38.68-50.40, "So in chapter 24 alas..."). Field shape:
+   `punctuation_overrides: {sensitivity}` inside transcription_config.
+2. ~~Disfluency removal~~ — **applied: `transcript_filtering_config:
+   {remove_disfluencies: true}`** (not directly in
+   transcription_config — the server rejects it there).
 3. `output_locale: en-GB` — free, matches the (British) pastor.
 4. Audio filtering — low priority; recording is clean, real church
    acoustics would be the reason.

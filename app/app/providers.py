@@ -78,6 +78,12 @@ class SpeechmaticsSession:
                         "enable_partials": False,
                         "max_delay": 1.5,
                         "max_delay_mode": "flexible",
+                        # tuning inputs for translation quality: fewer
+                        # false full stops at pauses, cleaner text in
+                        "punctuation_overrides": {"sensitivity": 0.12},
+                        "transcript_filtering_config": {
+                            "remove_disfluencies": True,
+                        },
                     },
                     "translation_config": {
                         "target_languages": [TARGET_LANG],
