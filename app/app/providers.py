@@ -80,7 +80,7 @@ class SpeechmaticsSession:
                         "max_delay_mode": "flexible",
                         # 0.12 merged real sentences; 0.5 seeded false
                         # stops that broke the vendor's translation units
-                        "punctuation_overrides": {"sensitivity": 0.25},
+                        "punctuation_overrides": {"sensitivity": 0.3},
                         "transcript_filtering_config": {
                             "remove_disfluencies": True,
                         },

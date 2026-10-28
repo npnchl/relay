@@ -90,7 +90,8 @@ Diagnostic window: 95 s of the same passage (absolute 86-181 s),
 | delay 1.5/2.0/4.0, sensitivity 0.5 | 2 | false stop after "infancy" persists at every delay |
 | delay 8.0, sensitivity 0.5 | 2 | delay is NOT the punctuation lever (docs cap says 4; server accepts 8 silently) |
 | delay 1.5, sensitivity 0.12 | 1 | false stop gone, but real sentences merge (ear-graded too sparse) |
-| **delay 4.0, sensitivity 0.25** | **0** | **current setting**; false stop gone, questions survive, all spans translated |
+| delay 4.0, sensitivity 0.25 | 0 | false stop gone, but "why say in those days?" lost its ? |
+| **delay 4.0, sensitivity 0.3** | **0** | **current setting**; ? restored in English AND Hindi; full coverage kept |
 
 Applied field shapes (server-validated):
 - `punctuation_overrides: {"sensitivity": 0.25}` inside transcription_config
