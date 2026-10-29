@@ -102,6 +102,14 @@ and punctuate honestly — which is what lets moderate sensitivity
 coupled: delay buys the punctuation model honesty, sensitivity
 chooses how often it marks.
 
+**Variance check (5 identical runs, 4.0 + 0.3):** 0 passthroughs in
+all five (15 messages each). Compare sensitivity 0.5, where the
+same two spans failed deterministically at every delay. So the
+tuned config moved those spans from *certain failure* to *no failure
+observed in 5 runs*. Caveat: the maintainer's own app session did
+catch a partial passthrough on a "So in those days..." unit at this
+config once — so the true rate is rare-but-nonzero, not zero.
+
 Applied field shapes (server-validated):
 - `punctuation_overrides: {"sensitivity": 0.25}` inside transcription_config
 - `transcript_filtering_config: {"remove_disfluencies": true}` — NOT
