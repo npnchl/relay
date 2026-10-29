@@ -104,10 +104,14 @@ class PlayerState(rx.State):
         async def on_final(line: str, start: float, end: float) -> None:
             async with self:
                 if self._gen == gen and line.strip():
+                    # Speechmatics timestamps are relative to the
+                    # session start; shift into sermon time so
+                    # captions from different sessions (pause/resume)
+                    # share one clock and pair correctly
                     self.en_fragments.append(
                         {
-                            "start": round(start, 2),
-                            "end": round(end, 2),
+                            "start": round(start + start_pos, 2),
+                            "end": round(end + start_pos, 2),
                             "text": line,
                         }
                     )
@@ -115,12 +119,14 @@ class PlayerState(rx.State):
         async def on_translation(text: str, start: float, end: float) -> None:
             async with self:
                 if self._gen == gen and text.strip():
+                    abs_start = start + start_pos
+                    abs_end = end + start_pos
                     self.hindi_sentences.append(
                         {
                             "idx": len(self.hindi_sentences),
-                            "at": audio.fmt_mmss(start),
-                            "start": round(start, 2),
-                            "end": round(end, 2),
+                            "at": audio.fmt_mmss(abs_start),
+                            "start": round(abs_start, 2),
+                            "end": round(abs_end, 2),
                             "text": text,
                             "flag": bool(LATIN_RUN.search(text)),
                         }
