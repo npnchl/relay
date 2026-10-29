@@ -90,8 +90,17 @@ Diagnostic window: 95 s of the same passage (absolute 86-181 s),
 | delay 1.5/2.0/4.0, sensitivity 0.5 | 2 | false stop after "infancy" persists at every delay |
 | delay 8.0, sensitivity 0.5 | 2 | delay is NOT the punctuation lever (docs cap says 4; server accepts 8 silently) |
 | delay 1.5, sensitivity 0.12 | 1 | false stop gone, but real sentences merge (ear-graded too sparse) |
+| delay 1.5, sensitivity 0.3 | 2 | isolation run: sensitivity alone does NOT fix it - both classic spans fail again |
 | delay 4.0, sensitivity 0.25 | 0 | false stop gone, but "why say in those days?" lost its ? |
 | **delay 4.0, sensitivity 0.3** | **0** | **current setting**; ? restored in English AND Hindi; full coverage kept |
+
+**Why the combo matters:** at 1.5 s the model must commit at a pause
+before hearing the continuation, so pauses still get false periods;
+at 4.0 s it has runway past the pause to see the sentence continue
+and punctuate honestly — which is what lets moderate sensitivity
+(0.3) keep real marks without inventing fake ones. The knobs are
+coupled: delay buys the punctuation model honesty, sensitivity
+chooses how often it marks.
 
 Applied field shapes (server-validated):
 - `punctuation_overrides: {"sensitivity": 0.25}` inside transcription_config
