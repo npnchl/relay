@@ -8,3 +8,4 @@ app/assets/
 .web/
 .reflex/
 .env
+app/reflex.lock/
