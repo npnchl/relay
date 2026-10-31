@@ -58,12 +58,14 @@ testing ≈ $0.06-0.08. Speechmatics gives $100 evaluation credit.
 | Arm | Why |
 |---|---|
 | Speechmatics realtime translation | frontrunner: STT + translation in one WebSocket stream (target languages set at session start) — the single-vendor pipeline |
-| Frontier LLM via Amazon Bedrock (EU region, e.g. eu-central-1) | Claude, Llama, Mistral, Amazon Nova all serve from EU regions |
-| Frontier LLM via Microsoft Foundry (EU region) | Claude, Llama, Mistral, DeepSeek, xAI Grok in the EU catalogue |
-| Frontier LLM via Google Vertex AI (EU region, e.g. europe-west4) | Gemini; open models (Llama, DeepSeek, Qwen) confirmed in europe-west4 — Gemini EU endpoints still partially "global"-only, verify before committing |
+| LLM arm on GCP Agent Platform: Gemini 4 Argon | frontier model, EU data residency documented (EU multi-region endpoint, at-rest + processing) |
+| LLM arm on GCP Agent Platform: Claude Sonnet 5.5 | Anthropic quality tier; Multi-Region (EU) deployment, GA since 2026-09-28 |
+| LLM arm on GCP Agent Platform: Claude Haiku 5.5 | the cost/latency pick for a live caption pipeline; Multi-Region (EU), GA 2026-10-07 |
+| Gemini 4 Carbon (when GA) | announced 2026-10-28, still in staged rollout; #1 on AA Intelligence Index v5.0 — add to the queue on release |
 | Google Translate API | general-purpose fallback arm |
 
-OpenAI models are excluded from the LLM arms.
+Platform focus: GCP only for the LLM arms (Bedrock/Foundry deprioritised).
+OpenAI models are excluded.
 DeepL is excluded — no Hindi support.
 Gladia is excluded — its translation is bundled with STT in one
 stream, so translation quality cannot be tested in isolation.
