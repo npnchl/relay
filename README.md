@@ -58,10 +58,15 @@ testing ≈ $0.06-0.08. Speechmatics gives $100 evaluation credit.
 | Arm | Why |
 |---|---|
 | Speechmatics realtime translation | frontrunner: STT + translation in one WebSocket stream (target languages set at session start) — the single-vendor pipeline |
-| Gladia translation add-on | €0.05/h flat, pairs with their STT |
-| Google Translate API or an LLM API | general-purpose arms |
+| Frontier LLM via Amazon Bedrock (EU region, e.g. eu-central-1) | Claude, Llama, Mistral, Amazon Nova all serve from EU regions |
+| Frontier LLM via Microsoft Foundry (EU region) | Claude, Llama, Mistral, DeepSeek, xAI Grok in the EU catalogue |
+| Frontier LLM via Google Vertex AI (EU region, e.g. europe-west4) | Gemini; open models (Llama, DeepSeek, Qwen) confirmed in europe-west4 — Gemini EU endpoints still partially "global"-only, verify before committing |
+| Google Translate API | general-purpose fallback arm |
 
+OpenAI models are excluded from the LLM arms.
 DeepL is excluded — no Hindi support.
+Gladia is excluded — its translation is bundled with STT in one
+stream, so translation quality cannot be tested in isolation.
 
 **Live vs batch:** test translation both on the live caption stream
 (hard mode, the deployment reality) and on final transcripts.
