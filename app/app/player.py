@@ -18,7 +18,7 @@ import re
 
 import reflex as rx
 
-from . import audio, azure_tts
+from . import audio, azure_tts, opper
 from .providers import SpeechmaticsSession
 
 # three or more consecutive Latin-letter words inside a Hindi
@@ -35,6 +35,10 @@ class PlayerState(rx.State):
     en_fragments: list[dict] = []  # {"start", "end", "text"}
     hindi_sentences: list[dict] = []  # {"idx", "at", "start", "end", "text"}
 
+    # translations from the Opper arm (one per finalised fragment)
+    haiku_status: str = ""
+    haiku_sentences: list[dict] = []  # same shape as hindi_sentences
+
     # TTS review state: which sentence is speaking
     tts_idx: int = -1
 
@@ -42,6 +46,11 @@ class PlayerState(rx.State):
     _gen: int = 0
     # backend-only: true while the slider thumb is being dragged
     _seeking: bool = False
+    # backend-only: finals not yet forming a complete sentence
+    # ({"text", "start", "end"}), and the (en, hi) pairs of translated
+    # sentences used as context
+    _en_pending: list[dict] = []
+    _ctx: list[dict] = []
 
     # ---- controls ----
 
@@ -60,6 +69,10 @@ class PlayerState(rx.State):
             self.sm_status = ""
             self.en_fragments = []
             self.hindi_sentences = []
+            self.haiku_status = ""
+            self.haiku_sentences = []
+            self._en_pending = []
+            self._ctx = []
         self._gen += 1
         self.playing = True
         return PlayerState.run(self._gen, self.position)
@@ -83,6 +96,10 @@ class PlayerState(rx.State):
         self.position = min(values[0], audio.DURATION_SECS)
         self.en_fragments = []
         self.hindi_sentences = []
+        self.haiku_status = ""
+        self.haiku_sentences = []
+        self._en_pending = []
+        self._ctx = []
         self.sm_status = ""
         self.tts_idx = -1
         if self.position >= audio.DURATION_SECS:
@@ -102,19 +119,44 @@ class PlayerState(rx.State):
         loop = asyncio.get_running_loop()
 
         async def on_final(line: str, start: float, end: float) -> None:
+            # Finals arrive as small chunks, not sentences: buffer them
+            # and only translate once a sentence-ending mark arrives
+            flush = None
             async with self:
                 if self._gen == gen and line.strip():
                     # Speechmatics timestamps are relative to the
                     # session start; shift into sermon time so
                     # captions from different sessions (pause/resume)
                     # share one clock and pair correctly
+                    abs_start = round(start + start_pos, 2)
+                    abs_end = round(end + start_pos, 2)
                     self.en_fragments.append(
                         {
-                            "start": round(start + start_pos, 2),
-                            "end": round(end + start_pos, 2),
+                            "start": abs_start,
+                            "end": abs_end,
                             "text": line,
                         }
                     )
+                    self._en_pending.append(
+                        {"text": line, "start": abs_start, "end": abs_end}
+                    )
+                    if line.rstrip().endswith((".", "!", "?")):
+                        # the sentence spans its first fragment's start
+                        # to its last fragment's end, so the paired
+                        # English covers the whole sentence
+                        span = (
+                            self._en_pending[0]["start"],
+                            self._en_pending[-1]["end"],
+                        )
+                        flush = (" ".join(p["text"] for p in self._en_pending), *span)
+                        self._en_pending = []
+            if flush is not None:
+                sentence, abs_start, abs_end = flush
+                # fire-and-forget: translate the whole sentence in a
+                # worker thread while the stream continues
+                asyncio.create_task(
+                    self._translate_final(gen, sentence, abs_start, abs_end)
+                )
 
         async def on_translation(text: str, start: float, end: float) -> None:
             async with self:
@@ -186,6 +228,18 @@ class PlayerState(rx.State):
                     if session is not None:
                         await session.finish()
                         await session.wait_done()
+                    # translate whatever is left in the sentence buffer
+                    async with self:
+                        if self._gen == gen and self._en_pending:
+                            span = (
+                                self._en_pending[0]["start"],
+                                self._en_pending[-1]["end"],
+                            )
+                            rest = " ".join(p["text"] for p in self._en_pending)
+                            self._en_pending = []
+                            asyncio.create_task(
+                                self._translate_final(gen, rest, *span)
+                            )
                     return
         finally:
             if session is not None:
@@ -193,6 +247,39 @@ class PlayerState(rx.State):
             async with self:
                 if self._gen == gen:
                     self.playing = False
+
+    async def _translate_final(
+        self, gen: int, sentence: str, abs_start: float, abs_end: float
+    ) -> None:
+        """Translate one complete sentence with Haiku 5.5 via Opper,
+        passing recent sentence pairs as context, and append it to the
+        Haiku panel. The call takes ~1 s, so it must never block the
+        audio stream - it runs detached here."""
+        async with self:
+            ctx = [(c["en"], c["hi"]) for c in self._ctx]
+        try:
+            hindi = await asyncio.to_thread(opper.translate, sentence, ctx)
+        except Exception as err:  # noqa: BLE001
+            async with self:
+                if self._gen == gen:
+                    self.haiku_status = f"error: {err}"
+            return
+        async with self:
+            if self._gen == gen and hindi:
+                self.haiku_sentences.append(
+                    {
+                        "idx": len(self.haiku_sentences),
+                        "at": audio.fmt_mmss(abs_start),
+                        "start": abs_start,
+                        "end": abs_end,
+                        "text": hindi,
+                        # the subtext is exactly the sentence that was
+                        # sent as to_translate
+                        "en": sentence,
+                        "flag": bool(LATIN_RUN.search(hindi)),
+                    }
+                )
+                self._ctx.append({"en": sentence, "hi": hindi})
 
     # ---- TTS review ----
 
@@ -215,12 +302,33 @@ class PlayerState(rx.State):
             "window._tts.play();"
         )
 
+    async def play_haiku(self, idx: int) -> rx.event.EventSpec:
+        """Play a sentence from the Opper/Haiku panel (same TTS path as
+        the Speechmatics panel, reading haiku_sentences instead)."""
+        if idx >= len(self.haiku_sentences):
+            return []
+        text = self.haiku_sentences[idx]["text"]
+        self.tts_idx = idx
+        data = await asyncio.to_thread(azure_tts.synthesize, text)
+        b64 = base64.b64encode(data).decode()
+        return rx.call_script(
+            "window._tts = window._tts || new Audio();"
+            f"window._tts.src = 'data:audio/mpeg;base64,{b64}';"
+            "window._tts.play();"
+        )
+
     # ---- readouts ----
 
     @rx.var
     def en_text(self) -> str:
         """The English transcript as flowing text."""
         return " ".join(f["text"] for f in self.en_fragments)
+
+    @rx.var
+    def haiku_paired(self) -> list[dict]:
+        """Haiku-panel sentences; each row's "en" is the exact sentence
+        that was sent to the model as to_translate."""
+        return list(self.haiku_sentences)
 
     @rx.var
     def paired_sentences(self) -> list[dict]:

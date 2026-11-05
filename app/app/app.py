@@ -13,7 +13,7 @@ from .player import PlayerState
 MONO = "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 
 
-def hindi_row(sent: rx.Var) -> rx.Component:
+def _translation_row(sent: rx.Var, on_play) -> rx.Component:
     """One translated sentence in the stacked layout: a fixed rail
     with play button + timestamp, then the Hindi prominent with the
     English words it translates muted directly beneath it."""
@@ -22,7 +22,7 @@ def hindi_row(sent: rx.Var) -> rx.Component:
         rx.hstack(
             rx.icon_button(
                 rx.icon("volume-2"),
-                on_click=PlayerState.play_sentence(sent["idx"]),
+                on_click=on_play(sent["idx"]),
                 size="1",
                 variant="soft",
                 color_scheme=(
@@ -77,6 +77,14 @@ def hindi_row(sent: rx.Var) -> rx.Component:
         gap="3",
         width="100%",
     )
+
+
+def hindi_row(sent: rx.Var) -> rx.Component:
+    return _translation_row(sent, PlayerState.play_sentence)
+
+
+def haiku_row(sent: rx.Var) -> rx.Component:
+    return _translation_row(sent, PlayerState.play_haiku)
 
 
 def caption_panel(title: str, status: rx.Var, body: rx.Component) -> rx.Component:
@@ -144,6 +152,26 @@ def hindi_panel() -> rx.Component:
     )
 
 
+def haiku_panel() -> rx.Component:
+    return caption_panel(
+        "हिन्दी — Claude Haiku 5.5 (Opper, Bedrock EU)",
+        PlayerState.haiku_status,
+        rx.scroll_area(
+            rx.vstack(
+                rx.foreach(PlayerState.haiku_paired, haiku_row),
+                rx.cond(
+                    PlayerState.haiku_sentences.length() == 0,
+                    rx.text("…", size="2", color=rx.color("gray", 10)),
+                ),
+                spacing="3",
+                width="100%",
+            ),
+            width="100%",
+            height="32vh",
+        ),
+    )
+
+
 def index() -> rx.Component:
     return rx.theme(
         rx.el.div(
@@ -198,6 +226,7 @@ def index() -> rx.Component:
                 ),
                 english_panel(),
                 hindi_panel(),
+                haiku_panel(),
                 spacing="5",
                 align="center",
                 width="100%",

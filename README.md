@@ -60,7 +60,7 @@ testing ≈ $0.06-0.08. Speechmatics gives $100 evaluation credit.
 | Speechmatics realtime translation | frontrunner: STT + translation in one WebSocket stream (target languages set at session start) — the single-vendor pipeline |
 | LLM arm on GCP Agent Platform: Gemini 4 Argon | frontier model, EU data residency documented (EU multi-region endpoint, at-rest + processing) |
 | LLM arm on GCP Agent Platform: Claude Sonnet 5.5 | Anthropic quality tier; Multi-Region (EU) deployment, GA since 2026-09-28 |
-| LLM arm on GCP Agent Platform: Claude Haiku 5.5 | the cost/latency pick for a live caption pipeline; Multi-Region (EU), GA 2026-10-07 |
+| LLM arm on GCP Agent Platform: Claude Haiku 5.5 | **primary pick**: cheap enough for continuous Sunday use, EU Multi-Region, GA 2026-10-07; prompt engineering is ours to control (unlike Speechmatics' fixed translator) |
 | Gemini 4 Carbon (when GA) | announced 2026-10-28, still in staged rollout; #1 on AA Intelligence Index v5.0 — add to the queue on release |
 | Google Translate API | general-purpose fallback arm |
 
