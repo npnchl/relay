@@ -184,7 +184,7 @@ def index() -> rx.Component:
                         rx.select.content(
                             *[
                                 rx.select.item(name, value=name)
-                                for name in audio.SOURCE_WINDOWS
+                                for name in audio.SOURCE_FILES
                             ]
                         ),
                         value=PlayerState.source,
