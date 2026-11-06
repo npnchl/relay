@@ -29,6 +29,9 @@ LATIN_RUN = re.compile(r"[A-Za-z']+(?:\s+[A-Za-z']+){2,}")
 class PlayerState(rx.State):
     position: float = 0.0
     playing: bool = False
+    # switchable audio source (see audio.SOURCE_WINDOWS)
+    source: str = audio.DEFAULT_SOURCE
+    duration_secs: float = audio.DURATION_SECS
 
     # captions from the Speechmatics session
     sm_status: str = ""
@@ -54,6 +57,25 @@ class PlayerState(rx.State):
 
     # ---- controls ----
 
+    def on_source_change(self, value: str) -> None:
+        """Switch audio source: stop playback and clear ALL state -
+        transcript, both translation panels, sentence buffer, context -
+        so nothing from the old source carries over."""
+        audio.load_source(value)
+        self.source = value
+        self.duration_secs = self.duration_secs
+        self.playing = False
+        self._gen += 1
+        self.position = 0.0
+        self.sm_status = ""
+        self.en_fragments = []
+        self.hindi_sentences = []
+        self.haiku_status = ""
+        self.haiku_sentences = []
+        self._en_pending = []
+        self._ctx = []
+        self.tts_idx = -1
+
     def toggle(self) -> rx.event.EventSpec | None:
         """One button: play when paused, pause when playing."""
         if self.playing:
@@ -62,7 +84,7 @@ class PlayerState(rx.State):
         return self.start()
 
     def start(self) -> rx.event.EventSpec | None:
-        if self.position >= audio.DURATION_SECS:
+        if self.position >= self.duration_secs:
             self.position = 0.0
         if self.position == 0.0:
             # fresh run from the top: clear the old captions
@@ -86,14 +108,14 @@ class PlayerState(rx.State):
     def drag(self, values: list[float]) -> None:
         """Live preview while the thumb moves: move the playhead only."""
         self._seeking = True
-        self.position = min(values[0], audio.DURATION_SECS)
+        self.position = min(values[0], self.duration_secs)
 
     def seek(self, values: list[float]) -> None:
         """Seek committed on release: clear the caption buffers and
         restart the chunk stream clean at the new position - nothing
         carries over, so no gaps between old and new transcript."""
         self._seeking = False
-        self.position = min(values[0], audio.DURATION_SECS)
+        self.position = min(values[0], self.duration_secs)
         self.en_fragments = []
         self.hindi_sentences = []
         self.haiku_status = ""
@@ -102,7 +124,7 @@ class PlayerState(rx.State):
         self._ctx = []
         self.sm_status = ""
         self.tts_idx = -1
-        if self.position >= audio.DURATION_SECS:
+        if self.position >= self.duration_secs:
             self.playing = False
             self._gen += 1
             return
@@ -210,9 +232,9 @@ class PlayerState(rx.State):
                         # writes - the seek will restart this loop anyway
                         continue
                     elapsed = loop.time() - t0
-                    pos = min(start_pos + elapsed, audio.DURATION_SECS)
+                    pos = min(start_pos + elapsed, self.duration_secs)
                     self.position = pos
-                    ended = pos >= audio.DURATION_SECS
+                    ended = pos >= self.duration_secs
                 # stream every chunk the playhead has now passed
                 target_byte = int(pos * audio.BYTES_PER_SEC)
                 while cursor < target_byte:
@@ -355,7 +377,7 @@ class PlayerState(rx.State):
 
     @rx.var
     def remaining_label(self) -> str:
-        return "-" + audio.fmt_mmss(audio.DURATION_SECS - self.position)
+        return "-" + audio.fmt_mmss(self.duration_secs - self.position)
 
     @rx.var
     def chunk_label(self) -> str:

@@ -13,13 +13,43 @@ AUDIO_PATH = APP_DIR / "assets" / "sermon-16k.wav"
 
 CHUNK_MS = 100
 
-# the sermon is loaded into memory once at import time
+# switchable sources: the full sermon, plus the stratified sections of
+# the Matthew 3 sermon (name -> (start secs, duration secs) in the full
+# file; None = whole file). Times follow phase 1's patch windows.
+SOURCE_WINDOWS: dict[str, tuple[float, float] | None] = {
+    "Full sermon": None,
+    "Reading (scripture)": (0, 120),
+    "Preaching (exposition)": (160, 120),
+    "Children's talk": (350, 120),
+    "Application": (1530, 120),
+    "Creed": (1740, 60),
+}
+DEFAULT_SOURCE = "Full sermon"
+
 with wave.open(str(AUDIO_PATH), "rb") as _w:
-    SERMON_PCM = _w.readframes(_w.getnframes())
+    _FULL_PCM = _w.readframes(_w.getnframes())
     BYTES_PER_SEC = _w.getframerate() * _w.getsampwidth() * _w.getnchannels()
 
-DURATION_SECS = len(SERMON_PCM) / BYTES_PER_SEC
 CHUNK_BYTES = int(BYTES_PER_SEC * CHUNK_MS / 1000)
+
+# current source (mutated by load_source)
+SERMON_PCM = _FULL_PCM
+DURATION_SECS = len(SERMON_PCM) / BYTES_PER_SEC
+
+
+def load_source(name: str) -> None:
+    """Switch the in-memory audio to a named source (sliced window or
+    the full sermon). Times in the player are relative to the source."""
+    global SERMON_PCM, DURATION_SECS
+    window = SOURCE_WINDOWS[name]
+    if window is None:
+        SERMON_PCM = _FULL_PCM
+    else:
+        start, dur = window
+        a = int(start * BYTES_PER_SEC)
+        b = int((start + dur) * BYTES_PER_SEC)
+        SERMON_PCM = _FULL_PCM[a:b]
+    DURATION_SECS = len(SERMON_PCM) / BYTES_PER_SEC
 
 
 def chunk_at(position: float) -> bytes:

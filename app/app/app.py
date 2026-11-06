@@ -176,7 +176,23 @@ def index() -> rx.Component:
     return rx.theme(
         rx.el.div(
             rx.vstack(
-                rx.heading("relay — translation eval", size="6"),
+                rx.hstack(
+                    rx.heading("relay — translation eval", size="6"),
+                    rx.spacer(),
+                    rx.select.root(
+                        rx.select.trigger(placeholder="Source", width="11rem"),
+                        rx.select.content(
+                            *[
+                                rx.select.item(name, value=name)
+                                for name in audio.SOURCE_WINDOWS
+                            ]
+                        ),
+                        value=PlayerState.source,
+                        on_change=PlayerState.on_source_change,
+                    ),
+                    width="100%",
+                    align="center",
+                ),
                 rx.vstack(
                     rx.hstack(
                         rx.icon_button(
@@ -197,7 +213,7 @@ def index() -> rx.Component:
                         rx.slider(
                             value=[PlayerState.position],
                             min=0,
-                            max=audio.DURATION_SECS,
+                            max=PlayerState.duration_secs,
                             step=1,
                             on_change=PlayerState.drag,
                             on_value_commit=PlayerState.seek,
