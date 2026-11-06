@@ -13,16 +13,18 @@ AUDIO_PATH = APP_DIR / "assets" / "sermon-16k.wav"
 
 CHUNK_MS = 100
 
-# switchable sources: the full sermon, plus the stratified sections of
-# the Matthew 3 sermon (name -> (start secs, duration secs) in the full
-# file; None = whole file). Times follow phase 1's patch windows.
+# switchable sources: the full sermon, plus its real sections (name ->
+# (start secs, duration secs) in the full file; None = whole file).
+# Boundaries read off the solaris-3 transcript: exposition starts ~148s
+# ("sit up and listen"), children's map demo ~339s ("three pre-prepared
+# helpers"), application ~1500s, creed ~1781s ("I believe in God").
 SOURCE_WINDOWS: dict[str, tuple[float, float] | None] = {
     "Full sermon": None,
-    "Reading (scripture)": (0, 120),
-    "Preaching (exposition)": (160, 120),
-    "Children's talk": (350, 120),
-    "Application": (1530, 120),
-    "Creed": (1740, 60),
+    "Reading (scripture)": (0, 148),
+    "Preaching (exposition)": (148, 191),
+    "Children's talk": (339, 1161),
+    "Application": (1500, 281),
+    "Creed": (1781, 19),
 }
 DEFAULT_SOURCE = "Full sermon"
 
