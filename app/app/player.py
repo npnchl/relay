@@ -63,7 +63,7 @@ class PlayerState(rx.State):
         so nothing from the old source carries over."""
         audio.load_source(value)
         self.source = value
-        self.duration_secs = self.duration_secs
+        self.duration_secs = audio.DURATION_SECS
         self.playing = False
         self._gen += 1
         self.position = 0.0
