@@ -220,7 +220,10 @@ class PlayerState(rx.State):
                     self.sm_status = "no SPEECHMATICS_API_KEY"
 
         t0 = loop.time()
-        cursor = int(start_pos * audio.BYTES_PER_SEC)
+        # round, not int: int() truncates float products like
+        # 1040.1*32000 = 33283199.999... to one byte early, which
+        # desyncs every s16le sample in the session into noise
+        cursor = round(start_pos * audio.BYTES_PER_SEC)
         try:
             while True:
                 await asyncio.sleep(audio.CHUNK_MS / 1000)
@@ -236,7 +239,7 @@ class PlayerState(rx.State):
                     self.position = pos
                     ended = pos >= self.duration_secs
                 # stream every chunk the playhead has now passed
-                target_byte = int(pos * audio.BYTES_PER_SEC)
+                target_byte = round(pos * audio.BYTES_PER_SEC)
                 while cursor < target_byte:
                     if session is not None:
                         await session.send(

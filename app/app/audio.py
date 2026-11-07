@@ -44,7 +44,10 @@ CHUNK_BYTES = int(BYTES_PER_SEC * CHUNK_MS / 1000)
 
 def chunk_at(position: float) -> bytes:
     """The 100 ms chunk of audio starting at `position` (seconds)."""
-    cursor = int(position * BYTES_PER_SEC)
+    # round, not int: position*BYTES_PER_SEC is often just below an
+    # integer (e.g. 1040.1*32000 = 33283199.999...), and int() would
+    # start one byte early, desyncing the s16le samples into noise
+    cursor = round(position * BYTES_PER_SEC)
     return SERMON_PCM[cursor : cursor + CHUNK_BYTES]
 
 
