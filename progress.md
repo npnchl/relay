@@ -1,9 +1,12 @@
 # Progress so far (2026-11-12, branch transcription-accuracy)
 
 ## Goal
-Pick the realtime STT provider for relay's live captions and, longer
-term, boost accuracy while enabling multilingual (English↔Hindi) live
-translation.
+Develop the **most accurate live transcription setup with multilingual
+capacity** — the speaker code-switches between English and Hindi mid-
+sermon, so the pipeline must handle that natively. **Diarization is
+optional** (nice to have, not required). Accuracy is judged by A/B
+listening tests (see test strategy below), not by vendor benchmarks
+alone.
 
 ## What was verified live
 - `SPEECHMATICS_API_KEY` works on `wss://eu.rt.speechmatics.com/v2`

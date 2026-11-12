@@ -1,0 +1,13 @@
+# secrets
+.env
+
+# raw audio (too large for git; keep locally)
+*.wav
+*.WAV
+
+# python / tooling artifacts
+.venv/
+__pycache__/
+.mypy_cache/
+.web/
+.reflex/
