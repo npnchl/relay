@@ -13,6 +13,8 @@ exactly like a real mic over a congested network.
 Run:  cd workbench && uv run python server.py     -> http://127.0.0.1:8000
 
 REST API (all bodies/returns JSON):
+  GET  /                                 the frontend (web/)
+  GET  /static/{name}                    frontend assets (no-store, cache-busted)
   GET  /health
   GET  /sources                          selectable sources (full + 60 s segments)
   POST /source            {"id": "full"|"seg_XX"|"random"}
@@ -20,6 +22,7 @@ REST API (all bodies/returns JSON):
   GET  /state                            {source, running, position, listening}
   POST /sim/start         {"offset"?}    start/resume the mic; re-anchors if offset differs
   POST /sim/stop                         pause the mic, keep position + transcripts
+  POST /sim/seek          {"offset"}     scrub the mic position (re-anchors listening arms)
   POST /listen/start      {"model": "A"|"B", "offset"?}   open that arm's provider session
   POST /listen/stop       {"model": "A"|"B"}              close it (sim auto-pauses if none left)
 
@@ -28,6 +31,7 @@ not-listening - we respect the drop and never silently reconnect. Resume
 explicitly with POST /listen/start (fresh session at the current sim position).
 POST /sim/stop never closes sessions: the mic just goes quiet ("muted mic").
   GET  /configs
+  GET  /config/schema                    all provider settings, from the SDK config dataclasses
   POST /config            {"model": "A"|"B", "config": {...}}   validated; restarts a listening arm
   GET  /transcripts?model=A&partial=0    stored transcript lines (also persisted to results/*.jsonl)
   POST /transcripts/clear {"model": "A"|"B"}
@@ -36,10 +40,15 @@ POST /sim/stop never closes sessions: the mic just goes quiet ("muted mic").
 """
 
 import asyncio
+import dataclasses
+import enum
+import hashlib
 import json
 import os
 import random
+import re
 import time
+import typing
 from pathlib import Path
 
 from aiohttp import web
@@ -57,6 +66,7 @@ KEYS = {
 BASE = Path(__file__).resolve().parent
 OUT = BASE / "audio_out"
 RESULTS = BASE / "results"
+WEB = BASE / "web"
 CHUNK = 640  # 40 ms of 16 kHz s16le mono - the cadence a real capture client sends
 LAG_WARN = 2.0  # warn if the simulated mic falls more than this far behind wall clock
 
@@ -70,6 +80,7 @@ state = {
     "configs": {"A": DEFAULT_CONFIGS["A"], "B": DEFAULT_CONFIGS["B"]},
     "sender": None,
     "log": {"A": [], "B": []},
+    "ended": False,  # sim reached the end of the source
 }
 
 SENT_END = (".", "!", "?", "।")  # sentence-final punctuation incl. Hindi danda
@@ -250,10 +261,14 @@ async def sender_loop() -> None:
     byte_pos = int(round((src["start"] + state["position"]) * audio.BYTES_PER_SEC))
     next_t = time.monotonic()
     warned = False
+    last_bcast = 0.0
     f = audio.RAW16K.open("rb")  # one persistent handle for the whole stream
     try:
         f.seek(byte_pos)
         while state["running"]:
+            if time.monotonic() - last_bcast >= 1.0:
+                last_bcast = time.monotonic()
+                broadcast_state()  # live sim position for the UI (~1 Hz)
             if state["source"] is not src:
                 src = state["source"]
             pos = byte_pos / audio.BYTES_PER_SEC - src["start"]
@@ -294,9 +309,11 @@ async def sender_loop() -> None:
 
 async def end_source() -> None:
     state["running"] = False
+    state["ended"] = True
     await close_sessions()
     flush_pending()
     log(f"sim reached end of source at {state['position']:.1f}s")
+    broadcast_state()
 
 
 # ------------------------------------------------------------ HTTP helpers
@@ -316,6 +333,7 @@ def state_json() -> dict:
         "position": state["position"],
         "listening": dict(state["listening"]),
         "sessions": {m: bool(state["sessions"][m] and state["sessions"][m].open) for m in ("A", "B")},
+        "ended": state["ended"],
     }
 
 
@@ -351,6 +369,7 @@ async def source_post(request):
     state["listening"] = {"A": False, "B": False}
     state["source"] = src
     state["position"] = 0.0
+    state["ended"] = False
     log(f"source selected: {src['id']} ({src['label']})")
     broadcast_state()
     return json_resp({"source": src})
@@ -370,6 +389,27 @@ async def state_get(request):
     return json_resp(state_json())
 
 
+async def reanchor(offset: float) -> None:
+    """Move the sim position to `offset`: stop the mic, close all sessions and
+    re-open every listening arm at the new position. A provider session cannot
+    teleport - its base_offset must match the first chunk it receives, so any
+    position change (seek, or start with a different offset) re-anchors arms."""
+    arms = [m for m in ("A", "B") if state["listening"][m]]
+    was_running = state["running"]
+    await stop_sender()
+    flush_pending()
+    await close_sessions(fast=True)
+    for m in ("A", "B"):
+        state["listening"][m] = False
+    state["position"] = offset
+    state["ended"] = False
+    for m in arms:
+        state["listening"][m] = await open_session(m, state["source"]["start"] + offset)
+    if was_running:
+        start_sender()
+    log(f"sim re-anchored at {offset:.1f}s (was_running={was_running})")
+
+
 async def sim_start(request):
     b = await body(request)
     if state["source"] is None:
@@ -377,30 +417,28 @@ async def sim_start(request):
     offset = b.get("offset")
     if offset is not None:
         offset = min(max(0.0, float(offset)), state["source"]["duration"])
-        if state["running"] and abs(state["position"] - offset) > 0.5:
-            # re-anchor the whole sim at offset; re-open every listening arm there
-            arms = [m for m in ("A", "B") if state["listening"][m]]
-            await stop_sender()
-            await close_sessions(fast=True)
-            for m in ("A", "B"):
-                state["listening"][m] = False
-            state["position"] = offset
-            for m in arms:
-                state["listening"][m] = await open_session(m, state["source"]["start"] + offset)
-            log(f"sim re-anchored at {offset:.1f}s")
-        elif not state["running"]:
-            state["position"] = offset
+        if abs(state["position"] - offset) > 0.5:
+            await reanchor(offset)
     if not state["running"]:
         # NOTE: we do NOT re-open dropped sessions here. If the provider dropped
-        # a session (e.g. idle timeout during a sim pause), that arm was already
-        # marked not-listening when the drop was seen; resume it explicitly with
-        # POST /listen/start.
-        for m in ("A", "B"):
-            if state["listening"][m] and not session_healthy(state["sessions"][m]):
-                log(f"arm {m} is marked listening but its session is gone - "
-                    f'POST /listen/start {{"model": "{m}"}} to resume')
+        # a session, that arm was already marked not-listening when the drop was
+        # seen; resume it explicitly with POST /listen/start.
+        state["ended"] = False
         start_sender()
         log(f"sim started at {state['position']:.1f}s")
+    broadcast_state()
+    return json_resp(state_json())
+
+
+async def sim_seek(request):
+    """Scrub the simulated mic position (running or paused)."""
+    b = await body(request)
+    if state["source"] is None:
+        return await bad("select a source first (POST /source)")
+    if b.get("offset") is None:
+        return await bad('need {"offset": seconds}')
+    offset = min(max(0.0, float(b["offset"])), state["source"]["duration"])
+    await reanchor(offset)
     broadcast_state()
     return json_resp(state_json())
 
@@ -517,6 +555,7 @@ async def transcripts_clear(request):
         return await bad('model must be "A" or "B"')
     state["log"][model] = []
     pending[model] = None
+    broadcast({"type": "cleared", "model": model})
     broadcast_state()
     return json_resp({"cleared": model})
 
@@ -547,10 +586,93 @@ async def events(request):
     return resp
 
 
+# ------------------------------------------------------------ static frontend
+
+NO_CACHE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def asset_version() -> str:
+    """Hash of the web/ files' names+mtimes+sizes, so asset URLs change whenever
+    any frontend file is edited (busts browser caches without a restart)."""
+    h = hashlib.sha1()
+    if WEB.is_dir():
+        for p in sorted(WEB.iterdir()):
+            if p.is_file():
+                st = p.stat()
+                h.update(f"{p.name}:{st.st_mtime_ns}:{st.st_size}".encode())
+    return h.hexdigest()[:12]
+
+
+async def index(request):
+    html = (WEB / "index.html").read_text()
+    html = re.sub(r"(/static/[a-z]+\.(?:js|css))", rf"\1?v={asset_version()}", html)
+    return web.Response(text=html, content_type="text/html", headers=NO_CACHE)
+
+
+async def static_handler(request):
+    name = request.match_info["name"]
+    p = (WEB / name).resolve()
+    if WEB.resolve() not in p.parents or not p.is_file():
+        return await bad("no such file", 404)
+    return web.FileResponse(p, headers=NO_CACHE)
+
+
+# ------------------------------------------------------------ config schema
+
+def _field_schema(cls, depth: int = 0) -> dict:
+    """Serialize a dataclass into a UI schema: fields with type/enum/default and
+    nested object fields (recursive). This is what exposes ALL provider settings."""
+    try:
+        hints = typing.get_type_hints(cls)
+    except Exception:
+        hints = {}
+    out = {}
+    for f in dataclasses.fields(cls):
+        if f.name.startswith("_"):
+            continue
+        tp = hints.get(f.name, f.type)
+        args = typing.get_args(tp)
+        if type(None) in args:  # unwrap Optional[X]
+            non_none = [a for a in args if a is not type(None)]
+            tp = non_none[0] if len(non_none) == 1 else tp
+        entry: dict = {"type": getattr(tp, "__name__", str(tp))}
+        if isinstance(tp, type) and issubclass(tp, enum.Enum):
+            entry["type"] = "enum"
+            entry["enum"] = [m.value for m in tp]
+        elif args and tp is list:
+            entry["type"] = "list"
+        if dataclasses.is_dataclass(tp) and isinstance(tp, type) and depth < 3:
+            entry["type"] = "object"
+            entry["fields"] = _field_schema(tp, depth + 1)
+        if f.default is not dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
+            try:
+                json.dumps(f.default)
+                entry["default"] = f.default.value if isinstance(f.default, enum.Enum) else f.default
+            except Exception:
+                pass
+        out[f.name] = entry
+    return out
+
+
+async def config_schema(request):
+    from speechmatics.rt import TranscriptionConfig
+    from gladiaio_sdk import LiveV2InitRequest
+    return json_resp({
+        "A": {"root": "TranscriptionConfig (speechmatics-rt)", "fields": _field_schema(TranscriptionConfig)},
+        "B": {"root": "LiveV2InitRequest (gladiaio-sdk)", "fields": _field_schema(LiveV2InitRequest)},
+    })
+
+
 # ------------------------------------------------------------ app
 
 def make_app() -> web.Application:
     app = web.Application()
+    app.router.add_get("/", index)
+    app.router.add_get("/static/{name:.+}", static_handler)
     app.router.add_get("/health", health)
     app.router.add_get("/sources", sources)
     app.router.add_post("/source", source_post)
@@ -558,9 +680,11 @@ def make_app() -> web.Application:
     app.router.add_get("/state", state_get)
     app.router.add_post("/sim/start", sim_start)
     app.router.add_post("/sim/stop", sim_stop)
+    app.router.add_post("/sim/seek", sim_seek)
     app.router.add_post("/listen/start", listen_start)
     app.router.add_post("/listen/stop", listen_stop)
     app.router.add_get("/configs", configs_get)
+    app.router.add_get("/config/schema", config_schema)
     app.router.add_post("/config", config_post)
     app.router.add_get("/transcripts", transcripts_get)
     app.router.add_post("/transcripts/clear", transcripts_clear)

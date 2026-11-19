@@ -93,6 +93,17 @@ async def main():
         print(f"phase2 transcripts with t0>=29: A={len(a30)} B={len(b30)}")
         assert a30 and b30, "no correctly-timestamped transcripts after re-anchor at 30s"
 
+        # scrub the sim while running -> re-anchors all listening arms at 45s
+        st, r = await post(s, "/sim/seek", {"offset": 45})
+        assert st == 200 and abs(r["position"] - 45) < 0.6 and r["running"], r
+        assert r["listening"] == {"A": True, "B": True}, r
+        assert r["sessions"] == {"A": True, "B": True}, "seek must re-open listening arms"
+        _, lines2 = await poll(s, 12, "seek45")
+        a45 = [l for l in lines2["A"] if l["t0"] >= 44]
+        b45 = [l for l in lines2["B"] if l["t0"] >= 44]
+        print(f"after sim/seek to 45s: transcripts t0>=44: A={len(a45)} B={len(b45)}")
+        assert a45 and b45, "no correctly-timestamped transcripts after sim seek"
+
         # stop the sim; transcripts endpoint still serves everything
         await post(s, "/sim/stop")
         st, tr = await get(s, "/transcripts?model=A")
