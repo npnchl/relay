@@ -2,10 +2,6 @@
 // + transcript viewport + settings popover (schema form + raw JSON).
 import { fmtTime, postJSON } from "./api.js";
 
-const ICON_GEAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>';
-const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6M14 11v6"/></svg>';
-const ICON_SCROLL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="m8 11 4 4 4-4"/><path d="M5 20h14"/></svg>';
-
 function getPath(obj, path) {
   return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
 }
@@ -90,14 +86,14 @@ function readForm(form, config) {
 export function createPanel(root, { model, label, schema, currentConfig, onJump, onListen, onClear }) {
   root.innerHTML = `
     <header class="panel-head">
-      <span class="dot" data-state="idle" role="img" aria-label="status: idle" title="idle"></span>
-      <span class="pstatus" data-role="status">idle</span>
       <span class="model-name">${label}</span>
       <span class="spacer"></span>
-      <button class="btn listen" aria-pressed="false">Listen</button>
-      <button class="icon-btn gear" aria-label="Settings for ${label}" title="Settings">${ICON_GEAR}</button>
-      <button class="icon-btn scroll on" aria-label="Auto-scroll" aria-pressed="true" title="Auto-scroll">${ICON_SCROLL}</button>
-      <button class="icon-btn trash" aria-label="Clear transcript ${model}" title="Clear">${ICON_TRASH}</button>
+      <button class="btn listen" aria-pressed="false" title="Start/stop this model's session">Listen</button>
+      <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">Scroll</button>
+      <button class="btn gear" title="Settings for ${label}">Settings</button>
+      <button class="btn trash danger" title="Clear transcript ${model}">Clear</button>
+      <span class="pstatus" role="status">idle</span>
+      <span class="dot" data-state="idle" role="img" aria-label="status: idle" title="idle"></span>
       <div class="popover" hidden>
         <div class="pop-title"><span>${label} settings</span><button class="btn json-toggle">edit as JSON</button></div>
         <div class="form"></div>
@@ -159,7 +155,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     }
   });
   root.querySelector(".reset").addEventListener("click", () => {
-    buildFields(form, schema.fields, currentConfig, "");
     form.replaceChildren();
     buildFields(form, schema.fields, currentConfig, "");
     jsonEdit.value = JSON.stringify(currentConfig, null, 2);
