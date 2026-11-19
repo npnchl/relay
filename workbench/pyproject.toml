@@ -1,0 +1,14 @@
+[project]
+name = "relay-workbench"
+version = "0.1.0"
+description = "Local A/B workbench for live transcription providers (Speechmatics vs Gladia)"
+requires-python = ">=3.12"
+dependencies = [
+    "aiohttp>=3.10",
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "python-dotenv>=1.0",
+]
+
+[tool.uv]
+package = false

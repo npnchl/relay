@@ -11,3 +11,11 @@ __pycache__/
 .mypy_cache/
 .web/
 .reflex/
+
+# workbench generated artifacts
+/workbench/cache/
+/workbench/audio_out/
+/results/
+
+# workbench server log
+/workbench/server.log
