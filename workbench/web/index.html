@@ -10,12 +10,15 @@
 
 <header class="topbar">
   <h1>Relay A/B</h1>
+  <span class="conn" id="conn" data-state="off" role="status"><span class="conn-dot" aria-hidden="true"></span><span id="conn-text">offline</span></span>
   <div class="source">
     <label for="source">Source</label>
     <select id="source" aria-label="Audio source"></select>
-    <button id="shuffle" class="btn" title="Random 60 s segment">Random</button>
+    <button id="shuffle" class="btn" title="Random 60 s segment">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22"/><path d="m18 2 4 4-4 4"/><path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2"/><path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8"/><path d="m18 14 4 4-4 4"/></svg>
+      Random
+    </button>
   </div>
-  <span class="conn-dot" id="conn-dot" data-state="off" role="status" aria-label="connection: disconnected" title="disconnected"></span>
 </header>
 
 <main class="panels">
@@ -24,23 +27,25 @@
 </main>
 
 <footer class="dock" aria-label="Players">
-  <div class="player" id="source-player">
-    <span class="plabel" title="The audio file you hear - source of truth, unsynced from the sim">Source</span>
-    <button id="src-play" class="icon-btn big" aria-label="Play source audio">
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-    </button>
+  <div class="pcard" id="source-player">
+    <div class="prow-top"><span class="plabel">Source</span><span class="pstatus" id="src-status" role="status"></span></div>
+    <div class="prow-mid">
+      <button id="src-play" class="playbtn" aria-label="Play source audio">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <span id="src-time" class="time">00:00 / 00:00</span>
+    </div>
     <input id="src-scrub" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek source audio">
-    <span id="src-time" class="time">00:00 / 00:00</span>
-    <span id="src-status" class="pstatus" role="status"></span>
   </div>
-  <div class="player" id="sim-player">
-    <span class="plabel" title="The simulated mic - what the models hear">Sim</span>
-    <button id="sim-play" class="icon-btn big" aria-label="Start simulated mic">
-      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-    </button>
+  <div class="pcard" id="sim-player">
+    <div class="prow-top"><span class="plabel">Sim</span><span class="pstatus" id="sim-status" role="status"></span></div>
+    <div class="prow-mid">
+      <button id="sim-play" class="playbtn" aria-label="Start simulated mic">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <span id="sim-time" class="time">00:00 / 00:00</span>
+    </div>
     <input id="sim-scrub" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek simulated mic position">
-    <span id="sim-time" class="time">00:00 / 00:00</span>
-    <span id="sim-status" class="pstatus" role="status"></span>
   </div>
 </footer>
 

@@ -1,6 +1,17 @@
-// One model panel: header (status dot + text, name, listen/stop, settings, scroll, clear)
-// + transcript viewport + settings popover (schema form + raw JSON).
+// One model panel: header with icon+text buttons (Listen owns its state,
+// Auto-scroll, Settings, Clear) + transcript viewport + form-only settings popover.
 import { fmtTime, postJSON } from "./api.js";
+
+const I = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>',
+  stop: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+  scroll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+};
+
+const MELIA1_FORBIDDEN = ["max_delay", "max_delay_mode", "punctuation_overrides", "transcript_filtering_config"];
 
 function getPath(obj, path) {
   return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
@@ -15,11 +26,119 @@ function setPath(obj, path, v) {
   o[keys[keys.length - 1]] = v;
 }
 
-// build form inputs for a schema {fields} into a container; values live in `config`
+function helperText(spec) {
+  const parts = [];
+  if (spec.enum) parts.push("one of: " + spec.enum.join(", "));
+  if ("default" in spec) parts.push("default: " + JSON.stringify(spec.default));
+  return parts.join(" · ");
+}
+
+// Build one vertical field row: label / control / helper
+function buildField(container, name, spec, config, path) {
+  const cur = getPath(config, path);
+  const wrap = document.createElement("div");
+  wrap.className = "field";
+  wrap.dataset.path = path;
+  const lab = document.createElement("label");
+  lab.className = "flabel";
+  lab.textContent = name;
+  wrap.appendChild(lab);
+
+  let inp, kind = spec.type;
+  if (spec.type === "enum") {
+    inp = document.createElement("select");
+    inp.className = "finput";
+    for (const v of spec.enum) {
+      const o = document.createElement("option");
+      o.value = v; o.textContent = v;
+      inp.appendChild(o);
+    }
+    inp.value = cur ?? spec.enum[0];
+    kind = "enum";
+  } else if (typeof cur === "boolean" || spec.type === "bool") {
+    kind = "bool";
+    const sw = document.createElement("label");
+    sw.className = "switch";
+    inp = document.createElement("input");
+    inp.type = "checkbox";
+    inp.checked = !!cur;
+    const knob = document.createElement("span");
+    knob.className = "knob";
+    sw.append(inp, knob);
+    wrap.appendChild(sw);
+  } else if (Array.isArray(cur) && spec.type !== "list") {
+    kind = "kv"; // list of objects -> key:value rows
+    const rows = document.createElement("div");
+    rows.className = "kv-rows";
+    const addRow = (k, v) => {
+      const r = document.createElement("div");
+      r.className = "kv-row";
+      const ki = document.createElement("input");
+      ki.placeholder = "key"; ki.value = k ?? "";
+      const vi = document.createElement("input");
+      vi.placeholder = "value"; vi.value = v ?? "";
+      const rm = document.createElement("button");
+      rm.className = "rm"; rm.textContent = "✕"; rm.type = "button";
+      rm.addEventListener("click", () => r.remove());
+      r.append(ki, vi, rm);
+      rows.appendChild(r);
+    };
+    if (Array.isArray(cur)) {
+      for (const item of cur) {
+        if (item && typeof item === "object") for (const [k, v] of Object.entries(item)) addRow(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+        else addRow("", String(item));
+      }
+    }
+    const add = document.createElement("button");
+    add.className = "btn kv-add"; add.type = "button"; add.textContent = "+ add";
+    add.addEventListener("click", () => addRow("", ""));
+    wrap.appendChild(rows);
+    wrap.appendChild(add);
+    wrap.dataset.kv = "1";
+  } else if (spec.type === "list" || Array.isArray(cur)) {
+    kind = "langlist"; // list of scalars -> comma-separated + chips
+    inp = document.createElement("input");
+    inp.className = "finput";
+    inp.type = "text";
+    inp.value = Array.isArray(cur) ? cur.join(", ") : (cur ?? "");
+    const chips = document.createElement("div");
+    chips.className = "chips";
+    const renderChips = () => {
+      chips.innerHTML = "";
+      for (const v of inp.value.split(",").map((s) => s.trim()).filter(Boolean)) {
+        const c = document.createElement("span");
+        c.textContent = v;
+        chips.appendChild(c);
+      }
+    };
+    inp.addEventListener("input", renderChips);
+    renderChips();
+    wrap.appendChild(inp);
+    wrap.appendChild(chips);
+  } else {
+    inp = document.createElement("input");
+    inp.className = "finput";
+    inp.type = spec.type === "int" || spec.type === "float" ? "number" : "text";
+    if (inp.type === "number") inp.step = "any";
+    inp.value = cur ?? spec.default ?? "";
+    kind = inp.type === "number" ? "number" : "string";
+  }
+  if (inp && inp.classList) {
+    inp.dataset.path = path;
+    inp.dataset.kind = kind;
+    if (kind !== "bool" && kind !== "kv" && kind !== "langlist") wrap.appendChild(inp);
+  }
+  const help = document.createElement("div");
+  help.className = "fhelp";
+  help.textContent = helperText(spec) || spec.type;
+  wrap.appendChild(help);
+  container.appendChild(wrap);
+  return wrap;
+}
+
 function buildFields(container, fields, config, prefix) {
   for (const [name, spec] of Object.entries(fields)) {
     const path = prefix ? `${prefix}.${name}` : name;
-    const cur = getPath(config, path);
     if (spec.type === "object" && spec.fields) {
       const det = document.createElement("details");
       const sum = document.createElement("summary");
@@ -27,58 +146,36 @@ function buildFields(container, fields, config, prefix) {
       det.appendChild(sum);
       buildFields(det, spec.fields, config, path);
       container.appendChild(det);
-      continue;
-    }
-    const wrap = document.createElement("label");
-    wrap.className = "field";
-    const lab = document.createElement("span");
-    lab.className = "flabel";
-    lab.textContent = name;
-    wrap.appendChild(lab);
-    let inp;
-    if (spec.type === "enum") {
-      inp = document.createElement("select");
-      for (const v of spec.enum) {
-        const o = document.createElement("option");
-        o.value = v;
-        o.textContent = v;
-        inp.appendChild(o);
-      }
-      inp.value = cur ?? spec.enum[0];
-    } else if (spec.type === "bool" || typeof cur === "boolean") {
-      inp = document.createElement("input");
-      inp.type = "checkbox";
-      inp.className = "fcheck";
-      inp.checked = !!cur;
-    } else if (spec.type === "list" || Array.isArray(cur)) {
-      inp = document.createElement("textarea");
-      inp.className = "finput";
-      inp.value = JSON.stringify(cur ?? spec.default ?? []);
     } else {
-      inp = document.createElement("input");
-      inp.className = "finput";
-      inp.type = spec.type === "int" || spec.type === "float" ? "number" : "text";
-      if (spec.type === "float" || spec.type === "int") inp.step = "any";
-      inp.value = cur ?? spec.default ?? "";
+      buildField(container, name, spec, config, path);
     }
-    inp.dataset.path = path;
-    inp.dataset.type = spec.type;
-    wrap.appendChild(inp);
-    container.appendChild(wrap);
   }
 }
 
 function readForm(form, config) {
   const out = JSON.parse(JSON.stringify(config));
-  for (const inp of form.querySelectorAll("[data-path]")) {
-    const t = inp.dataset.type;
+  for (const wrap of form.querySelectorAll(".field[data-path]")) {
+    const path = wrap.dataset.path;
+    if (wrap.dataset.kv) {
+      const rows = [...wrap.querySelectorAll(".kv-row")].map((r) => {
+        const [ki, vi] = r.querySelectorAll("input");
+        let v = vi.value;
+        try { v = JSON.parse(vi.value); } catch { /* keep string */ }
+        return { [ki.value]: v };
+      }).filter((o) => Object.keys(o)[0] !== "");
+      setPath(out, path, rows);
+      continue;
+    }
+    const inp = wrap.querySelector("[data-kind]");
+    if (!inp) continue;
+    const kind = inp.dataset.kind;
     let v;
-    if (inp.type === "checkbox") v = inp.checked;
-    else if (t === "enum") v = inp.value;
-    else if (t === "list") { try { v = JSON.parse(inp.value); } catch { v = inp.value; } }
-    else if (t === "int" || t === "float") v = inp.value === "" ? null : Number(inp.value);
+    if (kind === "bool") v = inp.checked;
+    else if (kind === "enum") v = inp.value;
+    else if (kind === "number") v = inp.value === "" ? null : Number(inp.value);
+    else if (kind === "langlist") v = inp.value.split(",").map((s) => s.trim()).filter(Boolean);
     else v = inp.value === "" ? null : inp.value;
-    setPath(out, inp.dataset.path, v);
+    setPath(out, path, v);
   }
   return out;
 }
@@ -88,39 +185,88 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     <header class="panel-head">
       <span class="model-name">${label}</span>
       <span class="spacer"></span>
-      <button class="btn listen" aria-pressed="false" title="Start/stop this model's session">Listen</button>
-      <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">Scroll</button>
-      <button class="btn gear" title="Settings for ${label}">Settings</button>
-      <button class="btn trash danger" title="Clear transcript ${model}">Clear</button>
-      <span class="pstatus" role="status">idle</span>
-      <span class="dot" data-state="idle" role="img" aria-label="status: idle" title="idle"></span>
+      <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
+      <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">${I.scroll}<span>Auto-scroll</span></button>
+      <button class="btn gear" title="Settings for ${label}">${I.gear}<span>Settings</span></button>
+      <button class="btn trash" title="Clear transcript ${model}">${I.trash}<span>Clear</span></button>
       <div class="popover" hidden>
-        <div class="pop-title"><span>${label} settings</span><button class="btn json-toggle">edit as JSON</button></div>
-        <div class="form"></div>
-        <textarea class="finput json-edit" hidden rows="14" aria-label="Raw config JSON"></textarea>
-        <div class="pop-row"><button class="apply">Apply</button><button class="reset">Reset</button><span class="cfg-status" role="status"></span></div>
+        <div class="pop-title">${label} settings</div>
+        <div class="pop-body"><div class="form"></div></div>
+        <div class="pop-foot"><button class="apply">Apply</button><button class="reset">Reset</button><span class="cfg-status" role="status"></span></div>
       </div>
     </header>
     <div class="viewport" aria-live="polite" role="log"></div>`;
 
   const vp = root.querySelector(".viewport");
-  const dot = root.querySelector(".dot");
-  const statusEl = root.querySelector(".pstatus");
   const listenBtn = root.querySelector(".listen");
+  const listenTxt = listenBtn.querySelector("span");
   const scrollBtn = root.querySelector(".scroll");
   const gear = root.querySelector(".gear");
   const trash = root.querySelector(".trash");
   const pop = root.querySelector(".popover");
   const form = root.querySelector(".form");
-  const jsonEdit = root.querySelector(".json-edit");
-  const jsonToggle = root.querySelector(".json-toggle");
   const cfgStatus = root.querySelector(".cfg-status");
   let autoScroll = true;
   let listening = false;
+  let dropped = false;
 
-  buildFields(form, schema.fields, currentConfig, "");
+  function renderForm() {
+    form.replaceChildren();
+    const main = document.createElement("section");
+    main.className = "sec";
+    const t = document.createElement("div");
+    t.className = "sec-title";
+    t.textContent = "Main";
+    main.appendChild(t);
+    form.appendChild(main);
+    buildFields(main, schema.fields, currentConfig, "");
+    syncEnhancedDisabled();
+  }
+  renderForm();
 
-  listenBtn.addEventListener("click", () => onListen(listening));
+  // disable Enhanced-only knobs when melia-1 is selected (mirrors server validation)
+  function syncEnhancedDisabled() {
+    if (model !== "A") return;
+    const modelVal = getPath(currentConfig, "model");
+    const isMelia = modelVal === "melia-1";
+    for (const wrap of form.querySelectorAll(".field[data-path]")) {
+      if (MELIA1_FORBIDDEN.includes(wrap.dataset.path)) {
+        wrap.classList.toggle("disabled", isMelia);
+        for (const el of wrap.querySelectorAll("input, select")) {
+          el.disabled = isMelia;
+          el.title = isMelia ? "Enhanced models only" : "";
+        }
+      }
+    }
+  }
+  form.addEventListener("change", (e) => {
+    if (e.target.dataset && e.target.dataset.path === "model") {
+      setPath(currentConfig, "model", e.target.value);
+      syncEnhancedDisabled();
+    }
+  });
+
+  function setListenState() {
+    listenBtn.classList.remove("on", "danger", "accent");
+    if (listening) {
+      listenBtn.classList.add("on");
+      listenBtn.innerHTML = `${I.stop}<span>Listening</span>`;
+      listenBtn.setAttribute("aria-pressed", "true");
+    } else if (dropped) {
+      listenBtn.classList.add("danger");
+      listenBtn.innerHTML = `${I.alert}<span>Dropped — re-listen</span>`;
+      listenBtn.setAttribute("aria-pressed", "false");
+    } else {
+      listenBtn.innerHTML = `${I.play}<span>Listen</span>`;
+      listenBtn.setAttribute("aria-pressed", "false");
+    }
+  }
+
+  listenBtn.addEventListener("click", () => {
+    dropped = false;
+    setListenState();
+    onListen(listening);
+  });
   trash.addEventListener("click", () => onClear());
   scrollBtn.addEventListener("click", () => {
     autoScroll = !autoScroll;
@@ -134,56 +280,41 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   document.addEventListener("click", (e) => {
     if (!pop.hidden && !pop.contains(e.target) && !gear.contains(e.target)) pop.hidden = true;
   });
-  jsonToggle.addEventListener("click", () => {
-    const showJson = jsonEdit.hidden;
-    jsonEdit.hidden = !showJson;
-    form.style.display = showJson ? "none" : "";
-    jsonToggle.textContent = showJson ? "edit as form" : "edit as JSON";
-    if (showJson) jsonEdit.value = JSON.stringify(readForm(form, currentConfig), null, 2);
-  });
   root.querySelector(".apply").addEventListener("click", async () => {
     cfgStatus.className = "cfg-status";
     cfgStatus.textContent = "applying…";
     try {
-      const cfg = jsonEdit.hidden ? readForm(form, currentConfig) : JSON.parse(jsonEdit.value);
+      const cfg = readForm(form, currentConfig);
       await postJSON("/config", { model, config: cfg });
+      Object.keys(currentConfig).forEach((k) => delete currentConfig[k]);
       Object.assign(currentConfig, cfg);
-      cfgStatus.textContent = "applied";
+      cfgStatus.textContent = "applied ✓";
     } catch (e) {
       cfgStatus.className = "cfg-status err";
       cfgStatus.textContent = "error: " + (e.data && e.data.error || e.message);
     }
   });
   root.querySelector(".reset").addEventListener("click", () => {
-    form.replaceChildren();
-    buildFields(form, schema.fields, currentConfig, "");
-    jsonEdit.value = JSON.stringify(currentConfig, null, 2);
+    renderForm();
     cfgStatus.textContent = "";
   });
 
   function setState(st) {
     listening = !!(st.listening && st.listening[model]);
     const open = !!(st.sessions && st.sessions[model]);
-    listenBtn.textContent = listening ? "Stop" : "Listen";
-    listenBtn.classList.toggle("on", listening);
-    listenBtn.setAttribute("aria-pressed", String(listening));
-    if (!statusEl.classList.contains("err")) {
-      dot.dataset.state = listening ? (open ? "listening" : "dropped") : "idle";
-      dot.title = statusEl.textContent = listening ? (open ? "listening" : "dropped") : "idle";
-      dot.setAttribute("aria-label", "status: " + statusEl.textContent);
-    }
+    if (open) dropped = false;
+    else if (listening && !open) dropped = true;
+    setListenState();
   }
 
-  function setNotice(text, isErr) {
-    statusEl.textContent = text;
-    statusEl.classList.toggle("err", !!isErr);
-    dot.dataset.state = isErr ? "dropped" : "idle";
-    dot.title = text;
-    dot.setAttribute("aria-label", "status: " + text);
+  function setDrop(text) {
+    dropped = true;
+    listening = false;
+    setListenState();
+    listenBtn.title = text;
   }
 
   function addLine(line) {
-    if (line.type === "error") return;
     const div = document.createElement("div");
     div.className = "line jump" + (line.partial ? " partial" : "");
     div.title = "Jump source player to this timestamp";
@@ -203,5 +334,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
 
   function clear() { vp.innerHTML = ""; }
 
-  return { setState, setNotice, addLine, clear };
+  setListenState();
+  return { setState, setDrop, addLine, clear };
 }

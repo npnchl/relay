@@ -8,7 +8,8 @@ const $ = (s) => document.querySelector(s);
 
 const sourceSel = $("#source");
 const shuffleBtn = $("#shuffle");
-const connDot = $("#conn-dot");
+const conn = $("#conn");
+const connText = $("#conn-text");
 
 let manifest = null;
 let currentSource = null;
@@ -33,7 +34,7 @@ function makePanels() {
       },
       onListen: (wasListening) => {
         postJSON(wasListening ? "/listen/stop" : "/listen/start", { model }).catch((e) =>
-          panels[model].setNotice(String(e.message || e), true)
+          panels[model].setDrop(String(e.message || e))
         );
       },
       onClear: () => postJSON("/transcripts/clear", { model }).catch(() => {}),
@@ -79,11 +80,8 @@ function handleEvent(msg) {
       const ev = msg.event;
       const p = panels[ev.model];
       if (!p) break;
-      if (ev.type === "closed" && !ev.local) {
-        p.setNotice(`dropped at ${"pos"} - press Listen to resume`, true);
-      } else if (ev.type === "error") {
-        p.setNotice(String(ev.message || "error").slice(0, 120), true);
-      }
+      if (ev.type === "closed" && !ev.local) p.setDrop("provider dropped the session - press re-listen");
+      else if (ev.type === "error") p.setDrop(String(ev.message || "error").slice(0, 120));
       break;
     }
   }
@@ -99,9 +97,9 @@ async function boot() {
   makePanels();
   applyState(await getJSON("/state"));
   connectEvents(handleEvent, (on) => {
-    connDot.dataset.state = on ? "on" : "off";
-    connDot.title = on ? "connected" : "disconnected - retrying…";
-    connDot.setAttribute("aria-label", "connection: " + (on ? "connected" : "disconnected"));
+    conn.dataset.state = on ? "on" : "off";
+    connText.textContent = on ? "connected" : "offline";
+    conn.setAttribute("aria-label", "connection: " + (on ? "connected" : "offline"));
   });
 }
 
@@ -118,6 +116,7 @@ shuffleBtn.addEventListener("click", () => {
 });
 
 boot().catch((e) => {
-  $("#conn-dot").dataset.state = "off";
+  conn.dataset.state = "off";
+  connText.textContent = "offline";
   console.error(e);
 });
