@@ -51,7 +51,7 @@ function buildField(container, name, spec, config, path) {
       inp = document.createElement("input");
       inp.className = "finput";
       inp.type = "text";
-      inp.setAttribute("list", "dl-" + path.join("_"));
+      inp.setAttribute("list", "dl-" + path.split(".").join("_"));
       inp.value = cur ?? spec.enum[0] ?? "";
       const dl = document.createElement("datalist");
       dl.id = inp.getAttribute("list");
@@ -256,6 +256,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   let listening = false;
   let dropped = false;
   let pending = false;
+  let pendingDir = null; // "start" | "stop" while a listen/stop request is in flight
 
   function renderForm() {
     form.replaceChildren();
@@ -269,7 +270,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     buildFields(main, schema.fields, currentConfig, "");
     syncEnhancedDisabled();
   }
-  renderForm();
 
   // disable Enhanced-only knobs when melia-1 is selected (mirrors server validation)
   function syncEnhancedDisabled() {
@@ -297,7 +297,8 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     listenBtn.classList.remove("on", "danger");
     listenBtn.disabled = pending;
     if (pending) {
-      listenBtn.innerHTML = `${I.play}<span>Starting…</span>`;
+      if (pendingDir === "stop") listenBtn.innerHTML = `${I.stop}<span>Stopping…</span>`;
+      else listenBtn.innerHTML = `${I.play}<span>Starting…</span>`;
       listenBtn.setAttribute("aria-pressed", "false");
     } else if (listening) {
       listenBtn.classList.add("on");
@@ -317,8 +318,9 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     if (pending) return;
     dropped = false;
     pending = true; // immediate feedback; cleared by the next state event or timeout
+    pendingDir = listening ? "stop" : "start";
     setListenState();
-    setTimeout(() => { if (pending) { pending = false; setListenState(); } }, 12000);
+    setTimeout(() => { if (pending) { pending = false; pendingDir = null; setListenState(); } }, 12000);
     onListen(listening);
   });
   trash.addEventListener("click", () => onClear());
@@ -354,16 +356,18 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   });
 
   function setState(st) {
-    if (st.sessions && st.sessions[model]) pending = false; // session confirmed open
-    listening = !!(st.listening && st.listening[model]);
     const open = !!(st.sessions && st.sessions[model]);
-    if (open) dropped = false;
+    listening = !!(st.listening && st.listening[model]);
+    if (open) { pending = false; pendingDir = null; dropped = false; } // session confirmed open
+    else if (pendingDir === "stop" && !listening) { pending = false; pendingDir = null; } // stop confirmed
+    else if (pendingDir === "start" && !listening) { pending = false; pendingDir = null; } // start failed
     else if (listening && !open && !pending) dropped = true;
     setListenState();
   }
 
   function setDrop(text) {
     pending = false;
+    pendingDir = null;
     dropped = true;
     listening = false;
     setListenState();
@@ -390,6 +394,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
 
   function clear() { vp.innerHTML = ""; }
 
+  renderForm(); // last on purpose: a form-rendering error must never kill the listeners above
   setListenState();
   return { setState, setDrop, addLine, clear };
 }
