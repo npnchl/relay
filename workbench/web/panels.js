@@ -46,14 +46,31 @@ function buildField(container, name, spec, config, path) {
 
   let inp, kind = spec.type;
   if (spec.type === "enum") {
-    inp = document.createElement("select");
-    inp.className = "finput";
-    for (const v of spec.enum) {
-      const o = document.createElement("option");
-      o.value = v; o.textContent = v;
-      inp.appendChild(o);
+    if (spec.free_str) {
+      // free-form string with known values as suggestions (e.g. Gladia model)
+      inp = document.createElement("input");
+      inp.className = "finput";
+      inp.type = "text";
+      inp.setAttribute("list", "dl-" + path.join("_"));
+      inp.value = cur ?? spec.enum[0] ?? "";
+      const dl = document.createElement("datalist");
+      dl.id = inp.getAttribute("list");
+      for (const v of spec.enum) {
+        const o = document.createElement("option");
+        o.value = v;
+        dl.appendChild(o);
+      }
+      wrap.appendChild(dl);
+    } else {
+      inp = document.createElement("select");
+      inp.className = "finput";
+      for (const v of spec.enum) {
+        const o = document.createElement("option");
+        o.value = v; o.textContent = v;
+        inp.appendChild(o);
+      }
+      inp.value = cur ?? spec.enum[0];
     }
-    inp.value = cur ?? spec.enum[0];
     kind = "enum";
   } else if (typeof cur === "boolean" || spec.type === "bool") {
     kind = "bool";
@@ -66,8 +83,9 @@ function buildField(container, name, spec, config, path) {
     knob.className = "knob";
     sw.append(inp, knob);
     wrap.appendChild(sw);
-  } else if (Array.isArray(cur) && spec.type !== "list") {
-    kind = "kv"; // list of objects -> key:value rows
+  } else if (spec.type === "dict" || (cur && typeof cur === "object" && !Array.isArray(cur))) {
+    kind = "kvobj"; // plain object -> key:value rows producing an object (never a string!)
+    wrap.dataset.kv = "obj";
     const rows = document.createElement("div");
     rows.className = "kv-rows";
     const addRow = (k, v) => {
@@ -83,18 +101,41 @@ function buildField(container, name, spec, config, path) {
       r.append(ki, vi, rm);
       rows.appendChild(r);
     };
-    if (Array.isArray(cur)) {
-      for (const item of cur) {
-        if (item && typeof item === "object") for (const [k, v] of Object.entries(item)) addRow(k, typeof v === "object" ? JSON.stringify(v) : String(v));
-        else addRow("", String(item));
-      }
+    if (cur && typeof cur === "object") {
+      for (const [k, v] of Object.entries(cur)) addRow(k, typeof v === "object" ? JSON.stringify(v) : String(v));
     }
     const add = document.createElement("button");
     add.className = "btn kv-add"; add.type = "button"; add.textContent = "+ add";
     add.addEventListener("click", () => addRow("", ""));
     wrap.appendChild(rows);
     wrap.appendChild(add);
-    wrap.dataset.kv = "1";
+  } else if (Array.isArray(cur) && spec.type !== "list") {
+    kind = "kv"; // list of objects -> key:value rows producing a list
+    wrap.dataset.kv = "list";
+    const rows = document.createElement("div");
+    rows.className = "kv-rows";
+    const addRow = (k, v) => {
+      const r = document.createElement("div");
+      r.className = "kv-row";
+      const ki = document.createElement("input");
+      ki.placeholder = "key"; ki.value = k ?? "";
+      const vi = document.createElement("input");
+      vi.placeholder = "value"; vi.value = v ?? "";
+      const rm = document.createElement("button");
+      rm.className = "rm"; rm.textContent = "✕"; rm.type = "button";
+      rm.addEventListener("click", () => r.remove());
+      r.append(ki, vi, rm);
+      rows.appendChild(r);
+    };
+    for (const item of cur) {
+      if (item && typeof item === "object") for (const [k, v] of Object.entries(item)) addRow(k, typeof v === "object" ? JSON.stringify(v) : String(v));
+      else addRow("", String(item));
+    }
+    const add = document.createElement("button");
+    add.className = "btn kv-add"; add.type = "button"; add.textContent = "+ add";
+    add.addEventListener("click", () => addRow("", ""));
+    wrap.appendChild(rows);
+    wrap.appendChild(add);
   } else if (spec.type === "list" || Array.isArray(cur)) {
     kind = "langlist"; // list of scalars -> comma-separated + chips
     inp = document.createElement("input");
@@ -157,13 +198,18 @@ function readForm(form, config) {
   for (const wrap of form.querySelectorAll(".field[data-path]")) {
     const path = wrap.dataset.path;
     if (wrap.dataset.kv) {
-      const rows = [...wrap.querySelectorAll(".kv-row")].map((r) => {
-        const [ki, vi] = r.querySelectorAll("input");
-        let v = vi.value;
-        try { v = JSON.parse(vi.value); } catch { /* keep string */ }
-        return { [ki.value]: v };
-      }).filter((o) => Object.keys(o)[0] !== "");
-      setPath(out, path, rows);
+      const parseV = (s) => { try { return JSON.parse(s); } catch { return s; } };
+      const rows = [...wrap.querySelectorAll(".kv-row")]
+        .map((r) => r.querySelectorAll("input"))
+        .filter(([ki]) => ki.value !== "")
+        .map(([ki, vi]) => [ki.value, parseV(vi.value)]);
+      if (wrap.dataset.kv === "obj") {
+        const o = {};
+        for (const [k, v] of rows) o[k] = v;
+        setPath(out, path, o);
+      } else {
+        setPath(out, path, rows.map(([k, v]) => ({ [k]: v })));
+      }
       continue;
     }
     const inp = wrap.querySelector("[data-kind]");

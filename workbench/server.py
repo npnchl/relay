@@ -53,6 +53,8 @@ from pathlib import Path
 
 from aiohttp import web
 from dotenv import load_dotenv
+from gladiaio_sdk import LiveV2InitRequest
+from speechmatics.rt import TranscriptionConfig
 
 import audio
 from providers import DEFAULT_CONFIGS, ProviderSession
@@ -135,7 +137,8 @@ def on_provider_event(ev: dict) -> None:
     resume explicitly with POST /listen/start."""
     if ev["type"] in ("closed", "error"):
         m = ev.get("model")
-        log(f"provider event: {ev.get('type')} {m} {str(ev.get('message',''))[:160]}")
+        log(f"provider event: {ev.get('type')} {m} local={ev.get('local')} "
+            f"pos={state['position']:.1f} {str(ev.get('message',''))[:160]}")
         broadcast({"type": "provider", "event": ev})
         if m in ("A", "B") and not ev.get("local") and state["listening"][m]:
             s = state["sessions"][m]
@@ -518,6 +521,9 @@ async def config_post(request):
         bad_keys = MELIA1_FORBIDDEN & set(tc.keys())
         if bad_keys:
             return await bad(f"melia-1 does not allow: {', '.join(sorted(bad_keys))} (Enhanced-only knobs)")
+    errs = _validate_config(model, cfg)
+    if errs:
+        return await bad("invalid config: " + "; ".join(errs[:6]))
     state["configs"][model] = cfg
     broadcast_state()  # config stored; session restart below may take seconds
     if state["listening"][model] and state["source"] is not None:
@@ -625,6 +631,39 @@ async def static_handler(request):
 
 # ------------------------------------------------------------ config schema
 
+def _type_entry(tp, depth: int) -> dict:
+    args = typing.get_args(tp)
+    origin = typing.get_origin(tp)
+    if origin is type(None) or tp is type(None):
+        return {"type": "null"}
+    if type(None) in args:  # unwrap Optional[X]
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:
+            return _type_entry(non_none[0], depth)
+    if origin is typing.Literal:  # Literal["a","b"] -> select
+        return {"type": "enum", "enum": list(args)}
+    if isinstance(tp, type) and issubclass(tp, enum.Enum):
+        return {"type": "enum", "enum": [m.value for m in tp]}
+    if origin is typing.Union:
+        non_none = [a for a in args if a is not type(None)]
+        lits = [v for a in non_none if typing.get_origin(a) is typing.Literal for v in typing.get_args(a)]
+        if lits and all(typing.get_origin(a) is typing.Literal or a is str for a in non_none):
+            entry = {"type": "enum", "enum": lits}
+            if str in non_none:  # e.g. Literal["solaria-1"] | str -> suggestions, but any string ok
+                entry["free_str"] = True
+            return entry
+        if len(non_none) == 1:
+            return _type_entry(non_none[0], depth)
+        return {"type": "any"}
+    if origin is dict or tp is dict:
+        return {"type": "dict"}
+    if origin is list or tp is list:
+        return {"type": "list"}
+    if isinstance(tp, type) and dataclasses.is_dataclass(tp) and depth < 3:
+        return {"type": "object", "fields": _field_schema(tp, depth + 1)}
+    return {"type": getattr(tp, "__name__", str(tp))}
+
+
 def _field_schema(cls, depth: int = 0) -> dict:
     """Serialize a dataclass into a UI schema: fields with type/enum/default and
     nested object fields (recursive). This is what exposes ALL provider settings."""
@@ -637,19 +676,7 @@ def _field_schema(cls, depth: int = 0) -> dict:
         if f.name.startswith("_"):
             continue
         tp = hints.get(f.name, f.type)
-        args = typing.get_args(tp)
-        if type(None) in args:  # unwrap Optional[X]
-            non_none = [a for a in args if a is not type(None)]
-            tp = non_none[0] if len(non_none) == 1 else tp
-        entry: dict = {"type": getattr(tp, "__name__", str(tp))}
-        if isinstance(tp, type) and issubclass(tp, enum.Enum):
-            entry["type"] = "enum"
-            entry["enum"] = [m.value for m in tp]
-        elif args and tp is list:
-            entry["type"] = "list"
-        if dataclasses.is_dataclass(tp) and isinstance(tp, type) and depth < 3:
-            entry["type"] = "object"
-            entry["fields"] = _field_schema(tp, depth + 1)
+        entry = _type_entry(tp, depth)
         if f.default is not dataclasses.MISSING and f.default_factory is dataclasses.MISSING:
             try:
                 json.dumps(f.default)
@@ -660,9 +687,47 @@ def _field_schema(cls, depth: int = 0) -> dict:
     return out
 
 
+def _validate_config(model: str, cfg: dict) -> list[str]:
+    """Type-check a config against the provider's SDK schema; returns error strings."""
+    cls = TranscriptionConfig if model == "A" else LiveV2InitRequest
+    fields = _field_schema(cls)
+    errs: list[str] = []
+
+    def walk(flds, obj, prefix):
+        if not isinstance(obj, dict):
+            errs.append(f"{prefix or 'config'}: expected an object, got {type(obj).__name__}")
+            return
+        for k, v in obj.items():
+            spec = flds.get(k)
+            if spec is None:
+                continue
+            path = f"{prefix}.{k}" if prefix else k
+            t = spec["type"]
+            if t == "object" and "fields" in spec:
+                if not isinstance(v, dict):
+                    errs.append(f"{path}: expected an object, got {type(v).__name__}")
+                else:
+                    walk(spec["fields"], v, path)
+            elif t == "dict" and not isinstance(v, dict):
+                errs.append(f"{path}: expected an object, got {type(v).__name__}")
+            elif t == "list" and not isinstance(v, list):
+                errs.append(f"{path}: expected a list, got {type(v).__name__}")
+            elif t == "enum" and v is not None and not spec.get("free_str") and v not in spec["enum"]:
+                errs.append(f"{path}: expected one of {spec['enum']}, got {v!r}")
+            elif t == "enum" and spec.get("free_str") and v is not None and not isinstance(v, str):
+                errs.append(f"{path}: expected a string, got {type(v).__name__}")
+            elif t in ("int", "float") and v is not None and not isinstance(v, (int, float)):
+                errs.append(f"{path}: expected a number, got {type(v).__name__}")
+            elif t == "bool" and not isinstance(v, bool):
+                errs.append(f"{path}: expected a boolean, got {type(v).__name__}")
+            elif t == "str" and v is not None and not isinstance(v, str):
+                errs.append(f"{path}: expected a string, got {type(v).__name__}")
+
+    walk(fields, cfg, "")
+    return errs
+
+
 async def config_schema(request):
-    from speechmatics.rt import TranscriptionConfig
-    from gladiaio_sdk import LiveV2InitRequest
     return json_resp({
         "A": {"root": "TranscriptionConfig (speechmatics-rt)", "fields": _field_schema(TranscriptionConfig)},
         "B": {"root": "LiveV2InitRequest (gladiaio-sdk)", "fields": _field_schema(LiveV2InitRequest)},
