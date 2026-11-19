@@ -226,25 +226,28 @@ select.finput { padding: 0 8px; }
 .pstatus.err { color: var(--danger); }
 .pstatus.ok { color: var(--ok); }
 .prow-mid { display: flex; align-items: center; gap: 10px; }
-.playbtn {
-  width: 36px; height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: var(--accent);
-  color: var(--on-accent);
+.prow-mid .btn { flex-shrink: 0; }
+.time { font-family: var(--mono); font-size: 12px; color: var(--muted-fg); white-space: nowrap; }
+/* scrubber: thin track, bigger hit area, round accent thumb */
+.pcard input[type="range"] {
+  flex: 1;
+  min-width: 60px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 24px;
   cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: background 0.15s ease, transform 0.15s ease;
 }
-.playbtn:hover { background: var(--accent-hover); }
-.playbtn:active { transform: scale(0.94); }
-.playbtn:disabled { opacity: 0.55; cursor: default; }
-.playbtn svg { width: 17px; height: 17px; }
-.time { margin-left: auto; font-family: var(--mono); font-size: 12px; color: var(--muted-fg); white-space: nowrap; }
-.pcard input[type="range"] { width: 100%; accent-color: var(--accent); height: 4px; cursor: pointer; }
+.pcard input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--border); }
+.pcard input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: -4px;
+}
+.pcard input[type="range"]::-moz-range-track { height: 4px; border-radius: 2px; background: var(--border); }
+.pcard input[type="range"]::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--accent); }
 
 @media (max-width: 900px) {
   .panels { grid-template-columns: 1fr; overflow-y: auto; }

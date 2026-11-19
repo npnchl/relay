@@ -14,29 +14,31 @@ export function initSourcePlayer() {
   const statusEl = document.getElementById("src-status");
   let scrubbing = false;
 
-  const setIcon = (playing) => {
-    playBtn.innerHTML = playing ? ICON_PAUSE : ICON_PLAY;
+  // the button owns the state, like the model Listen buttons
+  const setBtn = () => {
+    const playing = !audio.paused;
+    playBtn.innerHTML = (playing ? ICON_PAUSE : ICON_PLAY) + `<span>${playing ? "Pause" : "Play"}</span>`;
+    playBtn.classList.toggle("on", playing);
     playBtn.setAttribute("aria-label", playing ? "Pause source audio" : "Play source audio");
+    statusEl.textContent = "";
+    statusEl.className = "pstatus";
   };
   const updateTime = () => {
     timeEl.textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(audio.duration || 0)}`;
     if (!scrubbing) scrub.value = audio.currentTime;
   };
-  const updateStatus = () => {
-    statusEl.textContent = audio.paused ? "paused" : "playing";
-    statusEl.className = "pstatus" + (audio.paused ? "" : " ok");
-  };
 
   playBtn.addEventListener("click", () => (audio.paused ? audio.play() : audio.pause()));
-  audio.addEventListener("play", () => { setIcon(true); updateStatus(); });
-  audio.addEventListener("pause", () => { setIcon(false); updateStatus(); });
-  audio.addEventListener("ended", () => { setIcon(false); updateStatus(); });
+  audio.addEventListener("play", setBtn);
+  audio.addEventListener("pause", setBtn);
+  audio.addEventListener("ended", setBtn);
   audio.addEventListener("timeupdate", updateTime);
   audio.addEventListener("loadedmetadata", () => {
     scrub.max = audio.duration || 0;
     updateTime();
-    updateStatus();
+    setBtn();
   });
+  setBtn();
   scrub.addEventListener("input", () => {
     scrubbing = true;
     audio.currentTime = Number(scrub.value);
@@ -78,10 +80,23 @@ export function initSimPlayer() {
   const statusEl = document.getElementById("sim-status");
   let scrubbing = false;
   let running = false;
+  let ended = false;
 
-  const setIcon = () => {
-    playBtn.innerHTML = running ? ICON_PAUSE : ICON_PLAY;
-    playBtn.setAttribute("aria-label", running ? "Stop simulated mic" : "Start simulated mic");
+  // the button owns the state, like the model Listen buttons
+  const setBtn = () => {
+    playBtn.classList.remove("on");
+    if (running) {
+      playBtn.innerHTML = `${ICON_PAUSE}<span>Running</span>`;
+      playBtn.classList.add("on");
+      playBtn.setAttribute("aria-label", "Stop simulated mic");
+    } else {
+      playBtn.innerHTML = `${ICON_PLAY}<span>${ended ? "Replay" : "Start"}</span>`;
+      playBtn.setAttribute("aria-label", "Start simulated mic");
+    }
+    if (!statusEl.classList.contains("err")) {
+      statusEl.textContent = "";
+      statusEl.className = "pstatus";
+    }
   };
 
   playBtn.addEventListener("click", async () => {
@@ -113,16 +128,14 @@ export function initSimPlayer() {
   // called from SSE state events - backend is the source of truth for sim position
   function applyState(st) {
     running = !!st.running;
-    setIcon();
+    ended = !!st.ended;
+    setBtn();
     const dur = st.source ? st.source.duration : 0;
     scrub.max = dur;
     if (!scrubbing) scrub.value = st.position;
     timeEl.textContent = `${fmtTime(st.position)} / ${fmtTime(dur)}`;
-    if (!statusEl.classList.contains("err")) {
-      statusEl.textContent = st.ended ? "ended" : running ? "running" : "paused";
-      statusEl.className = "pstatus" + (running ? " ok" : "");
-    }
   }
+  setBtn();
 
   return { applyState };
 }

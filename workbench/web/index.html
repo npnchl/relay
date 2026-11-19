@@ -30,22 +30,18 @@
   <div class="pcard" id="source-player">
     <div class="prow-top"><span class="plabel">Source</span><span class="pstatus" id="src-status" role="status"></span></div>
     <div class="prow-mid">
-      <button id="src-play" class="playbtn" aria-label="Play source audio">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-      </button>
+      <button id="src-play" class="btn" aria-label="Play/pause source audio"></button>
+      <input id="src-scrub" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek source audio">
       <span id="src-time" class="time">00:00 / 00:00</span>
     </div>
-    <input id="src-scrub" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek source audio">
   </div>
   <div class="pcard" id="sim-player">
     <div class="prow-top"><span class="plabel">Sim</span><span class="pstatus" id="sim-status" role="status"></span></div>
     <div class="prow-mid">
-      <button id="sim-play" class="playbtn" aria-label="Start simulated mic">
-        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
-      </button>
+      <button id="sim-play" class="btn" aria-label="Start/stop simulated mic"></button>
+      <input id="sim-scrub" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek simulated mic position">
       <span id="sim-time" class="time">00:00 / 00:00</span>
     </div>
-    <input id="sim-scrub" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek simulated mic position">
   </div>
 </footer>
 
