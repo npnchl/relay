@@ -21,9 +21,11 @@ Server -> browser messages:
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import random
+import re
 import time
 from pathlib import Path
 
@@ -43,8 +45,9 @@ KEYS = {
 BASE = Path(__file__).resolve().parent
 WEB = BASE / "web"
 OUT = BASE / "audio_out"
-RESULTS = BASE.parent / "results"
 CHUNK = 3200  # 100 ms of 16 kHz s16le mono
+PACE = 1.05  # send slightly slower than realtime; at exactly 1.0x the providers'
+             # buffers can underrun on jitter and they silently drop speech
 
 state = {
     "manifest": None,
@@ -126,21 +129,6 @@ async def flush_pending() -> None:
             await emit({"type": "transcript", "model": m, "text": p["text"], "t0": p["t0"], "t1": p["t1"], "partial": False})
 
 
-def save_results() -> None:
-    if not any(state["log"].values()):
-        return
-    RESULTS.mkdir(exist_ok=True)
-    ts = time.strftime("%Y%m%d-%H%M%S")
-    payload = {
-        "ts": ts,
-        "source": state["source"],
-        "configs": state["configs"],
-        "log": state["log"],
-    }
-    (RESULTS / f"ab-{ts}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False))
-    print(f"saved results/ab-{ts}.json")
-
-
 def resolve_source(id: str) -> dict:
     m = state["manifest"]
     if id == "random":
@@ -203,6 +191,7 @@ async def cmd_play(offset: float) -> None:
             await emit({"type": "error", "model": m, "message": f"start: {e}"})
         else:
             log(f"session {m} started at {offset:.1f}s")
+            await emit({"type": "status", "model": m, "active": True})
     state["position"] = offset
     state["playing"] = True
     if state["sender"] is not None and not state["sender"].done():
@@ -214,7 +203,8 @@ async def cmd_play(offset: float) -> None:
 async def cmd_pause() -> None:
     await stop_sender()
     await flush_pending()
-    save_results()
+    for m in ("A", "B"):
+        await emit({"type": "status", "model": m, "active": False})  # sessions stay open, but nothing is processing
     await emit({"type": "state", "playing": False, "position": state["position"]})
 
 
@@ -301,30 +291,38 @@ async def handle_cmd(cmd: dict) -> None:
 
 
 async def sender_loop() -> None:
-    """Pace PCM chunks to both providers at realtime speed."""
+    """Pace PCM chunks to both providers at realtime speed.
+    Tracks an integer byte offset: float second offsets drift (0.1 accumulates
+    to 0.7999999999999999 etc.) and truncated seeks corrupt the PCM stream."""
     next_t = time.monotonic()
+    src = state["source"]
+    byte_pos = int(round((src["base"] + state["position"]) * audio.BYTES_PER_SEC))
     try:
         while state["playing"]:
             src = state["source"]
             if src is None:
                 break
-            pos = state["position"]
+            pos = byte_pos / audio.BYTES_PER_SEC - src["base"]
             if pos >= src["duration"] - 1e-6:
                 break
-            chunk = audio.read_chunk(src["base"] + pos, CHUNK)
+            chunk = audio.read_chunk_bytes(byte_pos, CHUNK)
             if not chunk:
                 break
             for m in ("A", "B"):
                 s = state["sessions"][m]
                 if s is not None and s.open:
                     await s.send_audio(chunk)
+            byte_pos += len(chunk)
             dur = len(chunk) / 2 / audio.SAMPLE_RATE
-            state["position"] = pos + dur
+            state["position"] = byte_pos / audio.BYTES_PER_SEC - src["base"]
+            if int(state["position"] / 5) != int(pos / 5):
+                sent = {m: getattr(s, "_sent_bytes", 0) if s else 0 for m, s in state["sessions"].items()}
+                log(f"sender wall={time.monotonic():.1f} pos={state['position']:.1f}s bytes={sent}")
             for m in ("A", "B"):
                 s = state["sessions"][m]
                 if s is not None:
                     s.expect_pos = src["base"] + state["position"]
-            next_t += dur
+            next_t += dur * PACE
             delay = next_t - time.monotonic()
             if delay > 0:
                 await asyncio.sleep(delay)
@@ -339,12 +337,42 @@ async def end_source() -> None:
     state["playing"] = False
     await close_sessions()
     await flush_pending()
-    save_results()
     await emit({"type": "state", "playing": False, "ended": True, "position": state["position"]})
 
 
+NO_CACHE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
+def asset_version() -> str:
+    """Hash of the web/ files' names+mtimes+sizes, so the asset URLs change
+    whenever any frontend file is edited, even without a server restart."""
+    h = hashlib.sha1()
+    for p in sorted(WEB.iterdir()):
+        if p.is_file():
+            st = p.stat()
+            h.update(f"{p.name}:{st.st_mtime_ns}:{st.st_size}".encode())
+    return h.hexdigest()[:12]
+
+
 async def index(request):
-    return web.FileResponse(WEB / "index.html")
+    # version the asset URLs so no browser cache (incl. VS Code's internal
+    # browser, which is known to ignore no-store) can serve stale JS/CSS
+    html = (WEB / "index.html").read_text()
+    html = re.sub(r"(/static/[a-z]+\.(?:js|css))", rf"\1?v={asset_version()}", html)
+    return web.Response(text=html, content_type="text/html", headers=NO_CACHE)
+
+
+async def static_handler(request):
+    # no-store so browsers always refetch after a server restart (no stale JS/CSS)
+    name = request.match_info["name"]
+    p = (WEB / name).resolve()
+    if WEB.resolve() not in p.parents or not p.is_file():
+        return web.Response(status=404)
+    return web.FileResponse(p, headers=NO_CACHE)
 
 
 async def audio_handler(request):
@@ -425,11 +453,21 @@ async def serve() -> None:
     app.router.add_get("/", index)
     app.router.add_get("/ws", ws_handler)
     app.router.add_get("/audio/{name}", audio_handler)
-    app.router.add_static("/static/", WEB)
+    app.router.add_get("/static/{name:.+}", static_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 8000)
-    await site.start()
+    try:
+        await site.start()
+    except OSError as e:
+        await state["http"].close()
+        await runner.cleanup()
+        if e.errno == 48:
+            raise SystemExit(
+                "port 8000 already in use - another server.py is probably running "
+                "(check with: lsof -i :8000 | grep LISTEN)"
+            )
+        raise
     log("workbench ready at http://127.0.0.1:8000")
     await asyncio.Event().wait()
 

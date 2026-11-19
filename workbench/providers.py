@@ -11,6 +11,8 @@ message handling here mirrors their payloads.
 
 import asyncio
 import json
+import os
+import re
 import time
 
 from aiohttp import WSMsgType
@@ -63,6 +65,7 @@ class ProviderSession:
         self.open = False
         self._seq = 0
         self._recv = None
+        self.ready = asyncio.Event()  # set when the provider confirms the session is live
         # absolute source position the next audio chunk should have, and last
         # time we heard from the provider (to detect dead/half-open sessions)
         self.expect_pos = base_offset
@@ -86,12 +89,19 @@ class ProviderSession:
             self.ws = await http.ws_connect(data["url"], heartbeat=30)
         self.open = True
         self._recv = asyncio.create_task(self._recv_loop())
+        # don't stream audio until the provider confirms the session is live;
+        # audio sent before that is silently dropped and the opening is lost
+        try:
+            await asyncio.wait_for(self.ready.wait(), 5)
+        except asyncio.TimeoutError:
+            pass
 
     async def send_audio(self, chunk: bytes) -> None:
         if not self.open or self.ws is None:
             return
         try:
             self._seq += 1
+            self._sent_bytes = getattr(self, "_sent_bytes", 0) + len(chunk)
             await self.ws.send_bytes(chunk)
         except Exception as e:
             self.open = False
@@ -144,6 +154,11 @@ class ProviderSession:
 
     async def _handle(self, m: dict) -> None:
         kind = m.get("message") or m.get("type")
+        if os.environ.get("WB_DEBUG_RAW"):
+            import sys
+            print(f"RAW {time.monotonic():.1f} {self.model} {kind} {json.dumps(m, ensure_ascii=False)[:150]}", file=sys.stderr, flush=True)
+        if kind in ("RecognitionStarted", "started", "listening"):
+            self.ready.set()
         if self.model == "A":
             if kind == "AddTranscript":
                 await self._emit_sm(m, partial=False)
@@ -166,16 +181,29 @@ class ProviderSession:
 
     async def _emit_sm(self, m: dict, partial: bool) -> None:
         results = m.get("results") or []
-        text = (m.get("metadata") or {}).get("transcript")
-        if not text:
-            text = " ".join(
-                (r.get("alternatives") or [{}])[0].get("content", "") for r in results
-            )
-        text = (text or "").strip()
+        words = [((r.get("alternatives") or [{}])[0].get("content", ""),
+                  r.get("start_time", 0), r.get("end_time", 0)) for r in results]
+        if not words:
+            return
+        # SM re-sends the tail of a phrase when it extends it ("In" -> "In those"
+        # -> "In those days, ..."), with overlapping start times. Strip the
+        # word-level overlap against what we already emitted and emit only the delta.
+        tail = getattr(self, "_tail", [])
+        k = 0
+        for cand in range(min(len(tail), len(words)), 0, -1):
+            if tail[-cand:] == [w[0] for w in words[:cand]]:
+                k = cand
+                break
+        delta = words[k:]
+        self._tail = (tail + [w[0] for w in words])[-12:]
+        if not delta:
+            return
+        text = " ".join(w[0] for w in delta).strip()
+        text = re.sub(r"\s+([.,!?;:])", r"\1", text)  # "6 ." -> "6."
         if not text:
             return
-        t0 = self.base_offset + (results[0].get("start_time", 0) if results else 0)
-        t1 = self.base_offset + (results[-1].get("end_time", 0) if results else 0)
+        t0 = self.base_offset + delta[0][1]
+        t1 = self.base_offset + delta[-1][2]
         await self.on_event(
             {"type": "transcript", "model": "A", "text": text, "t0": t0, "t1": t1, "partial": partial}
         )

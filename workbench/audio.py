@@ -66,9 +66,16 @@ def ensure_16k_mono() -> float:
 
 
 def read_chunk(offset_s: float, nbytes: int) -> bytes:
-    """Read nbytes of 16 kHz mono PCM at the given offset (seconds)."""
+    """Read nbytes of 16 kHz mono PCM at the given offset (seconds).
+    Uses round(), not int(): int() truncates float products like
+    25599.999999999996 to 25599, seeking 1 byte early and corrupting the stream."""
+    return read_chunk_bytes(int(round(offset_s * BYTES_PER_SEC)), nbytes)
+
+
+def read_chunk_bytes(byte_off: int, nbytes: int) -> bytes:
+    """Read nbytes of 16 kHz mono PCM at an exact integer byte offset."""
     with RAW16K.open("rb") as f:
-        f.seek(int(offset_s * BYTES_PER_SEC))
+        f.seek(byte_off)
         return f.read(nbytes)
 
 

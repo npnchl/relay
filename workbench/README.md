@@ -28,8 +28,9 @@ sent to the browser.
   providers at realtime pace. **Pause** stops streaming but keeps transcripts.
 - **Scrub** closes both provider sessions and clears both viewports; pressing
   play again resumes from the new position. **Trash** clears one viewport.
-- Each viewport auto-scrolls while its toggle is on. Sessions are saved to
-  `../results/ab-<timestamp>.json` on pause and at end of source.
+- One **auto-scroll** toggle in the top bar controls both viewports. The dot
+  next to each model name shows session state: grey idle, green running, red
+  error. The gear button opens a settings form per model (no raw JSON).
 
 ## Smoke test
 

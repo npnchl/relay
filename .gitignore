@@ -15,7 +15,6 @@ __pycache__/
 # workbench generated artifacts
 /workbench/cache/
 /workbench/audio_out/
-/results/
 
 # workbench server log
 /workbench/server.log

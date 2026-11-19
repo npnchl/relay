@@ -12,24 +12,33 @@ let selectValue = "full";
 let send = () => {};
 let defaultConfigs = null;
 
+// one shared auto-scroll toggle for both viewports
+const autoScrollAll = $("#autoscroll-all");
+let autoScroll = autoScrollAll.checked;
+autoScrollAll.addEventListener("change", () => {
+  autoScroll = autoScrollAll.checked;
+});
+
 const viewports = {
-  A: createViewport($("#panel-A"), "A", "Speechmatics melia-1 (multi)", {
+  A: createViewport($("#panel-A"), "A", "Speechmatics melia-1", {
     onConfig: (cfg) => send({ cmd: "config", model: "A", config: cfg }),
     onClear: () => send({ cmd: "clear", model: "A" }),
     onReset: () => {
       if (!defaultConfigs) return;
-      viewports.A.setConfig(defaultConfigs.A);
+      viewports.A.setDefaultConfig(defaultConfigs.A);
       send({ cmd: "config", model: "A", config: defaultConfigs.A });
     },
+    getAutoScroll: () => autoScroll,
   }),
-  B: createViewport($("#panel-B"), "B", "Gladia solaria-1 (code-switching)", {
+  B: createViewport($("#panel-B"), "B", "Gladia solaria-1", {
     onConfig: (cfg) => send({ cmd: "config", model: "B", config: cfg }),
     onClear: () => send({ cmd: "clear", model: "B" }),
     onReset: () => {
       if (!defaultConfigs) return;
-      viewports.B.setConfig(defaultConfigs.B);
+      viewports.B.setDefaultConfig(defaultConfigs.B);
       send({ cmd: "config", model: "B", config: defaultConfigs.B });
     },
+    getAutoScroll: () => autoScroll,
   }),
 };
 
@@ -59,8 +68,8 @@ function onMessage(msg) {
     case "hello":
       fillSources(msg.manifest);
       defaultConfigs = msg.configs;
-      viewports.A.setConfig(msg.configs.A);
-      viewports.B.setConfig(msg.configs.B);
+      viewports.A.setDefaultConfig(msg.configs.A);
+      viewports.B.setDefaultConfig(msg.configs.B);
       if (msg.source) applySource(msg.source);
       break;
     case "source":
@@ -81,11 +90,19 @@ function onMessage(msg) {
       viewports[msg.model].setStatus("error: " + msg.message);
       break;
     case "error":
-      if (msg.model && viewports[msg.model]) viewports[msg.model].addLine(msg);
-      else {
+      if (msg.model && viewports[msg.model]) {
+        viewports[msg.model].addLine(msg);
+        viewports[msg.model].setDot("error");
+      } else {
         console.warn(msg.message);
         $("#conn").textContent = msg.message;
       }
+      break;
+    case "status":
+      if (viewports[msg.model]) viewports[msg.model].setDot(msg.active ? "active" : "idle");
+      break;
+    case "closed":
+      if (msg.model && viewports[msg.model]) viewports[msg.model].setDot("idle");
       break;
   }
 }
