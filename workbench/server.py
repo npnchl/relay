@@ -631,6 +631,13 @@ async def static_handler(request):
 
 # ------------------------------------------------------------ config schema
 
+def _enum_entry(vals: list) -> dict:
+    e = {"type": "enum", "enum": vals}
+    if vals and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals):
+        e["vtype"] = "number"  # frontend must emit numbers, not strings
+    return e
+
+
 def _type_entry(tp, depth: int) -> dict:
     args = typing.get_args(tp)
     origin = typing.get_origin(tp)
@@ -641,14 +648,14 @@ def _type_entry(tp, depth: int) -> dict:
         if len(non_none) == 1:
             return _type_entry(non_none[0], depth)
     if origin is typing.Literal:  # Literal["a","b"] -> select
-        return {"type": "enum", "enum": list(args)}
+        return _enum_entry(list(args))
     if isinstance(tp, type) and issubclass(tp, enum.Enum):
-        return {"type": "enum", "enum": [m.value for m in tp]}
+        return _enum_entry([m.value for m in tp])
     if origin is typing.Union:
         non_none = [a for a in args if a is not type(None)]
         lits = [v for a in non_none if typing.get_origin(a) is typing.Literal for v in typing.get_args(a)]
         if lits and all(typing.get_origin(a) is typing.Literal or a is str for a in non_none):
-            entry = {"type": "enum", "enum": lits}
+            entry = _enum_entry(lits)
             if str in non_none:  # e.g. Literal["solaria-1"] | str -> suggestions, but any string ok
                 entry["free_str"] = True
             return entry
@@ -712,12 +719,23 @@ def _validate_config(model: str, cfg: dict) -> list[str]:
                 errs.append(f"{path}: expected an object, got {type(v).__name__}")
             elif t == "list" and not isinstance(v, list):
                 errs.append(f"{path}: expected a list, got {type(v).__name__}")
-            elif t == "enum" and v is not None and not spec.get("free_str") and v not in spec["enum"]:
-                errs.append(f"{path}: expected one of {spec['enum']}, got {v!r}")
-            elif t == "enum" and spec.get("free_str") and v is not None and not isinstance(v, str):
-                errs.append(f"{path}: expected a string, got {type(v).__name__}")
-            elif t in ("int", "float") and v is not None and not isinstance(v, (int, float)):
-                errs.append(f"{path}: expected a number, got {type(v).__name__}")
+            elif t == "enum":
+                ev = v
+                if spec.get("vtype") == "number" and isinstance(ev, str):
+                    # tolerate numeric strings from hand-rolled API clients
+                    try:
+                        ev = int(ev) if ev.strip().lstrip("+-").isdigit() else float(ev)
+                    except ValueError:
+                        pass
+                if v is not None and not spec.get("free_str") and ev not in spec["enum"]:
+                    errs.append(f"{path}: expected one of {spec['enum']}, got {v!r}")
+                elif spec.get("free_str") and v is not None and not isinstance(v, str):
+                    errs.append(f"{path}: expected a string, got {type(v).__name__}")
+            elif t in ("int", "float") and v is not None:
+                if not isinstance(v, (int, float)) or isinstance(v, bool):
+                    errs.append(f"{path}: expected a number, got {type(v).__name__}")
+                elif t == "int" and isinstance(v, float) and not v.is_integer():
+                    errs.append(f"{path}: expected an integer, got {v}")
             elif t == "bool" and not isinstance(v, bool):
                 errs.append(f"{path}: expected a boolean, got {type(v).__name__}")
             elif t == "str" and v is not None and not isinstance(v, str):

@@ -160,13 +160,14 @@ function buildField(container, name, spec, config, path) {
     inp = document.createElement("input");
     inp.className = "finput";
     inp.type = spec.type === "int" || spec.type === "float" ? "number" : "text";
-    if (inp.type === "number") inp.step = "any";
+    if (inp.type === "number") inp.step = spec.type === "int" ? "1" : "any";
     inp.value = cur ?? spec.default ?? "";
     kind = inp.type === "number" ? "number" : "string";
   }
   if (inp && inp.classList) {
     inp.dataset.path = path;
     inp.dataset.kind = kind;
+    if (spec.vtype) inp.dataset.vtype = spec.vtype; // numeric enums must read back as numbers
     if (kind !== "bool" && kind !== "kv" && kind !== "langlist") wrap.appendChild(inp);
   }
   const help = document.createElement("div");
@@ -217,7 +218,7 @@ function readForm(form, config) {
     const kind = inp.dataset.kind;
     let v;
     if (kind === "bool") v = inp.checked;
-    else if (kind === "enum") v = inp.value;
+    else if (kind === "enum") v = inp.dataset.vtype === "number" ? Number(inp.value) : inp.value;
     else if (kind === "number") v = inp.value === "" ? null : Number(inp.value);
     else if (kind === "langlist") v = inp.value.split(",").map((s) => s.trim()).filter(Boolean);
     else v = inp.value === "" ? null : inp.value;
