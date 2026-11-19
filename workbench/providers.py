@@ -1,38 +1,49 @@
-"""Provider sessions for the two A/B arms.
+"""Provider sessions on the OFFICIAL native clients (issue 3):
 
-Raw websockets with the probe-verified configs from tuning/ (2026-11-19):
-  A: Speechmatics realtime v2, melia-1 + language "multi"
-  B: Gladia live v2, solaria-1 + code_switching
+  A: speechmatics-rt  -> AsyncClient against wss://eu.rt.speechmatics.com/v2
+                        (start_session waits for RecognitionStarted; send_audio
+                        pushes each chunk over the websocket immediately)
+  B: gladiaio-sdk     -> GladiaClient.live_v2_async().start_session(config dict)
+                        (POST /v2/live + websocket; send_audio sends immediately,
+                        buffering only until the socket opens, then flushes)
 
-Both receive identical 16 kHz mono s16le PCM chunks. The official SDKs
-(speechmatics-python, gladiaio-sdk) can replace these classes later; the
-message handling here mirrors their payloads.
+Both arms receive identical 16 kHz mono s16le PCM chunks via send_audio(), and
+report events through the synchronous on_event callback:
+
+  {"type": "transcript", "model": "A"|"B", "text": str, "t0": float, "t1": float,
+   "partial": bool}          t0/t1 are absolute seconds in the full source file
+  {"type": "error",  "model": ..., "message": str}
+  {"type": "closed", "model": ...}
 """
 
 import asyncio
+import dataclasses
 import json
-import os
 import re
 import time
 
-from aiohttp import WSMsgType
+from speechmatics.rt import (
+    AsyncClient,
+    AudioEncoding,
+    AudioFormat,
+    Model,
+    ServerMessageType,
+    StaticKeyAuth,
+    TranscriptionConfig,
+)
+from gladiaio_sdk import GladiaClient
 
 SM_URL = "wss://eu.rt.speechmatics.com/v2"
-GLADIA_INIT = "https://api.gladia.io/v2/live"
 
 DEFAULT_CONFIGS = {
+    # A is a flat dict mapped onto speechmatics-rt's TranscriptionConfig
+    # (melia-1 rejects max_delay / punctuation_overrides / transcript_filtering_config)
     "A": {
-        # melia-1 has a reduced feature set: max_delay, max_delay_mode,
-        # punctuation_overrides and transcript_filtering_config are rejected
-        # by the API on this model (verified 2026-11-19), so they are omitted.
-        "message": "StartRecognition",
-        "audio_format": {"type": "raw", "encoding": "pcm_s16le", "sample_rate": 16000},
-        "transcription_config": {
-            "model": "melia-1",
-            "language": "multi",
-            "enable_partials": False,
-        },
+        "model": "melia-1",
+        "language": "multi",
+        "enable_partials": False,
     },
+    # B is a gladiaio-sdk LiveV2InitRequest dict; the SDK sends a dict as-is
     "B": {
         "encoding": "wav/pcm",
         "bit_depth": 16,
@@ -51,6 +62,12 @@ DEFAULT_CONFIGS = {
 }
 
 
+def _to_dict(obj):
+    if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
+        return dataclasses.asdict(obj)
+    return obj
+
+
 class ProviderSession:
     """One live STT session. base_offset = absolute seconds in the source file
     at which this session's audio stream started (for timestamp mapping)."""
@@ -60,126 +77,121 @@ class ProviderSession:
         self.key = key
         self.config = config
         self.base_offset = base_offset
-        self.on_event = on_event
-        self.ws = None
+        self.on_event = on_event  # sync callback
         self.open = False
-        self._seq = 0
-        self._recv = None
-        self.ready = asyncio.Event()  # set when the provider confirms the session is live
+        self.ready = asyncio.Event()
         # absolute source position the next audio chunk should have, and last
         # time we heard from the provider (to detect dead/half-open sessions)
         self.expect_pos = base_offset
         self.last_rx = time.monotonic()
+        self._client: AsyncClient | None = None      # speechmatics-rt
+        self._session = None                        # gladiaio-sdk live session
+        self._sent_bytes = 0
+        self._tail: list[str] = []                  # SM word-overlap dedup
+        self.closed_by_us = False                   # False if the provider dropped us
 
-    async def start(self, http) -> None:
+    # ------------------------------------------------------------- lifecycle
+
+    async def start(self) -> None:
         if self.model == "A":
-            self.ws = await http.ws_connect(
-                SM_URL,
-                headers={"Authorization": f"Bearer {self.key}"},
-                heartbeat=30,
-            )
-            await self.ws.send_str(json.dumps(self.config))
+            await self._start_sm()
         else:
-            async with http.post(
-                GLADIA_INIT, json=self.config, headers={"x-gladia-key": self.key}
-            ) as r:
-                data = await r.json()
-                if r.status not in (200, 201):
-                    raise RuntimeError(f"Gladia init {r.status}: {json.dumps(data)[:300]}")
-            self.ws = await http.ws_connect(data["url"], heartbeat=30)
+            await self._start_gladia()
         self.open = True
-        self._recv = asyncio.create_task(self._recv_loop())
-        # don't stream audio until the provider confirms the session is live;
-        # audio sent before that is silently dropped and the opening is lost
         try:
-            await asyncio.wait_for(self.ready.wait(), 5)
+            await asyncio.wait_for(self.ready.wait(), 8)
         except asyncio.TimeoutError:
             pass
 
+    async def _start_sm(self) -> None:
+        cfg = self.config.get("transcription_config", self.config)  # flat or nested
+        fields = {f.name for f in dataclasses.fields(TranscriptionConfig)}
+        kwargs = {}
+        for k, v in cfg.items():
+            if k not in fields:
+                continue
+            if k == "model" and isinstance(v, str):
+                v = Model(v)
+            kwargs[k] = v
+        tc = TranscriptionConfig(**kwargs)
+        af = AudioFormat(encoding=AudioEncoding.PCM_S16LE, sample_rate=16000)
+        c = AsyncClient(auth=StaticKeyAuth(self.key), url=SM_URL)
+        self._client = c
+        c.on(ServerMessageType.RECOGNITION_STARTED, lambda m: self.ready.set())
+        c.on(ServerMessageType.ADD_TRANSCRIPT, lambda m: self._emit_sm(m, partial=False))
+        c.on(ServerMessageType.ADD_PARTIAL_TRANSCRIPT, lambda m: self._emit_sm(m, partial=True))
+        c.on(ServerMessageType.ERROR, lambda m: self.on_event(
+            {"type": "error", "model": "A", "message": json.dumps(_to_dict(m))[:300]}))
+        # start_session waits for RecognitionStarted internally (5 s timeout)
+        await c.start_session(transcription_config=tc, audio_format=af)
+
+    async def _start_gladia(self) -> None:
+        client = GladiaClient(api_key=self.key)
+        live = client.live_v2_async()
+        s = live.start_session(self.config)  # dict options are sent as-is
+        self._session = s
+        s.on("connected", lambda m: self.ready.set())
+        s.on("message", self._on_gladia_message)
+        s.on("error", lambda e: self.on_event({"type": "error", "model": "B", "message": str(e)[:300]}))
+        s.on("ended", lambda m: self._provider_ended())
+
     async def send_audio(self, chunk: bytes) -> None:
-        if not self.open or self.ws is None:
+        if not self.open:
             return
         try:
-            self._seq += 1
-            self._sent_bytes = getattr(self, "_sent_bytes", 0) + len(chunk)
-            await self.ws.send_bytes(chunk)
+            if self.model == "A":
+                await self._client.send_audio(chunk)
+            else:
+                self._session.send_audio(chunk)  # sync; sends immediately when ws open
+            self._sent_bytes += len(chunk)
         except Exception as e:
             self.open = False
-            await self.on_event({"type": "error", "model": self.model, "message": f"send: {e}"})
+            self.on_event({"type": "error", "model": self.model, "message": f"send: {e}"})
+
+    def _provider_ended(self) -> None:
+        """Provider closed the session on its own (idle timeout, error, ...)."""
+        self.open = False
+        self.on_event({"type": "closed", "model": self.model, "local": self.closed_by_us})
 
     async def close(self, fast: bool = False) -> None:
-        """fast=True skips waiting for in-flight finals (used on seek/select,
-        where the viewports are cleared anyway)."""
+        """fast=True skips waiting for in-flight finals (used on re-anchor/select)."""
+        self.closed_by_us = True
         self.open = False
-        if self.ws is not None:
-            try:
-                if self.model == "A":
-                    await self.ws.send_str(
-                        json.dumps({"message": "EndOfStream", "last_seq_no": self._seq})
-                    )
-                else:
-                    await self.ws.send_str(json.dumps({"type": "stop_recording"}))
-            except Exception:
-                pass
-            if self._recv is not None:
+        try:
+            if self.model == "A":
                 if fast:
-                    self._recv.cancel()
+                    await self._client.close()
                 else:
                     try:
-                        await asyncio.wait_for(self._recv, 4)
+                        await asyncio.wait_for(self._client.stop_session(), 4)
                     except Exception:
-                        self._recv.cancel()
-            try:
-                await self.ws.close()
-            except Exception:
-                pass
+                        await self._client.close()
+            else:
+                if not fast and self._session is not None:
+                    self._session.stop_recording()
+                    await asyncio.sleep(0.3)  # let in-flight finals arrive
+                if self._session is not None:
+                    self._session.end_session()
+        except Exception:
+            pass
+        self.on_event({"type": "closed", "model": self.model, "local": True})
 
-    async def _recv_loop(self) -> None:
-        try:
-            async for msg in self.ws:
-                self.last_rx = time.monotonic()
-                if msg.type == WSMsgType.TEXT:
-                    await self._handle(json.loads(msg.data))
-                elif msg.type in (WSMsgType.CLOSED, WSMsgType.ERROR):
-                    break
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            await self.on_event(
-                {"type": "error", "model": self.model, "message": f"recv: {type(e).__name__}: {e}"}
-            )
-        finally:
-            self.open = False
-            await self.on_event({"type": "closed", "model": self.model})
+    # ------------------------------------------------------------- events
 
-    async def _handle(self, m: dict) -> None:
-        kind = m.get("message") or m.get("type")
-        if os.environ.get("WB_DEBUG_RAW"):
-            import sys
-            print(f"RAW {time.monotonic():.1f} {self.model} {kind} {json.dumps(m, ensure_ascii=False)[:150]}", file=sys.stderr, flush=True)
-        if kind in ("RecognitionStarted", "started", "listening"):
-            self.ready.set()
-        if self.model == "A":
-            if kind == "AddTranscript":
-                await self._emit_sm(m, partial=False)
-            elif kind == "AddPartialTranscript":
-                await self._emit_sm(m, partial=True)
-            elif kind == "Error":
-                await self.on_event(
-                    {"type": "error", "model": "A", "message": json.dumps(m)[:300]}
-                )
-        else:
-            # Gladia live v2 sends {"type":"transcript","data":{"is_final":bool,"utterance":{...}}}
-            # (verified 2026-11-19 probe); legacy final_transcript/partial_transcript kept as fallback
-            if kind == "transcript":
-                data = m.get("data") or {}
-                await self._emit_gladia_utt(data.get("utterance") or {}, partial=not data.get("is_final", True))
-            elif kind == "final_transcript":
-                await self._emit_gladia(m, partial=False)
-            elif kind == "partial_transcript":
-                await self._emit_gladia(m, partial=True)
+    def _on_gladia_message(self, m) -> None:
+        self.last_rx = time.monotonic()
+        m = _to_dict(m)
+        kind = m.get("type")
+        if kind == "transcript":
+            data = m.get("data") or {}
+            self._emit_gladia_utt(data.get("utterance") or {}, partial=not data.get("is_final", True))
+        elif kind == "final_transcript":  # legacy shapes, kept as fallback
+            self._emit_gladia_utt((m.get("data") or {}).get("utterance") or {}, partial=False)
+        elif kind == "partial_transcript":
+            self._emit_gladia_utt((m.get("data") or {}).get("utterance") or {}, partial=True)
 
-    async def _emit_sm(self, m: dict, partial: bool) -> None:
+    def _emit_sm(self, m: dict, partial: bool) -> None:
+        self.last_rx = time.monotonic()
         results = m.get("results") or []
         words = [((r.get("alternatives") or [{}])[0].get("content", ""),
                   r.get("start_time", 0), r.get("end_time", 0)) for r in results]
@@ -188,7 +200,7 @@ class ProviderSession:
         # SM re-sends the tail of a phrase when it extends it ("In" -> "In those"
         # -> "In those days, ..."), with overlapping start times. Strip the
         # word-level overlap against what we already emitted and emit only the delta.
-        tail = getattr(self, "_tail", [])
+        tail = self._tail
         k = 0
         for cand in range(min(len(tail), len(words)), 0, -1):
             if tail[-cand:] == [w[0] for w in words[:cand]]:
@@ -202,23 +214,18 @@ class ProviderSession:
         text = re.sub(r"\s+([.,!?;:])", r"\1", text)  # "6 ." -> "6."
         if not text:
             return
-        t0 = self.base_offset + delta[0][1]
-        t1 = self.base_offset + delta[-1][2]
-        await self.on_event(
-            {"type": "transcript", "model": "A", "text": text, "t0": t0, "t1": t1, "partial": partial}
-        )
+        self.on_event({
+            "type": "transcript", "model": "A", "text": text,
+            "t0": self.base_offset + delta[0][1], "t1": self.base_offset + delta[-1][2],
+            "partial": partial,
+        })
 
-    async def _emit_gladia(self, m: dict, partial: bool) -> None:
-        await self._emit_gladia_utt((m.get("data") or {}).get("utterance") or {}, partial)
-
-    async def _emit_gladia_utt(self, utt: dict, partial: bool) -> None:
+    def _emit_gladia_utt(self, utt: dict, partial: bool) -> None:
         text = (utt.get("text") or "").strip()
         if not text:
             return
-        await self.on_event({
-            "type": "transcript",
-            "model": "B",
-            "text": text,
+        self.on_event({
+            "type": "transcript", "model": "B", "text": text,
             "t0": self.base_offset + utt.get("start", 0),
             "t1": self.base_offset + utt.get("end", 0),
             "partial": partial,

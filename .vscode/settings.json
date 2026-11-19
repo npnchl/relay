@@ -1,0 +1,26 @@
+{
+  // Hide generated/clutter files from the Explorer (they stay on disk and
+  // remain openable via Quick Open - this only affects the file tree).
+  "files.exclude": {
+    "**/.venv": true,
+    "**/uv.lock": true,
+    "**/pyproject.toml": true,
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    "**/skills-lock.json": true,
+    "**/server.log": true,
+    "**/cache": true,
+    "**/audio_out": true,
+    "**/results": true,
+    "**/*.WAV": true,
+    "**/*.wav": true
+  },
+  // don't let the watcher burn CPU on the venv / caches
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    "**/cache/**": true,
+    "**/audio_out/**": true,
+    "**/results/**": true
+  }
+}

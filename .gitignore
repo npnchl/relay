@@ -18,3 +18,6 @@ __pycache__/
 
 # workbench server log
 /workbench/server.log
+
+# workbench transcript output
+/workbench/results/

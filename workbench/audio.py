@@ -1,8 +1,9 @@
-"""Audio prep for the workbench.
+"""Audio prep for the workbench backend.
 
 Converts the 48 kHz stereo sermon WAV to a cached 16 kHz mono s16le raw PCM
-file (the exact bytes streamed to both providers), and writes playable WAVs
-(full file + pre-cut 1-minute segments) plus a manifest for the UI.
+file (the exact bytes the simulated mic streams to the providers), and writes
+playable WAVs (full file + 60 s segments) plus a manifest describing the
+selectable sources.
 """
 
 import json
@@ -22,7 +23,7 @@ MANIFEST = OUT / "manifest.json"
 SAMPLE_RATE = 16000
 BYTES_PER_SEC = SAMPLE_RATE * 2  # s16le mono
 SEGMENT_SECONDS = 60
-SEGMENT_STRIDE = 150  # one 60s segment every 150s across the file
+SEGMENT_STRIDE = 150  # one 60 s segment every 150 s across the file
 
 
 def fmt(s: float) -> str:
@@ -65,26 +66,17 @@ def ensure_16k_mono() -> float:
     return pcm.size / SAMPLE_RATE
 
 
-def read_chunk(offset_s: float, nbytes: int) -> bytes:
-    """Read nbytes of 16 kHz mono PCM at the given offset (seconds).
-    Uses round(), not int(): int() truncates float products like
-    25599.999999999996 to 25599, seeking 1 byte early and corrupting the stream."""
-    return read_chunk_bytes(int(round(offset_s * BYTES_PER_SEC)), nbytes)
-
-
-def read_chunk_bytes(byte_off: int, nbytes: int) -> bytes:
-    """Read nbytes of 16 kHz mono PCM at an exact integer byte offset."""
-    with RAW16K.open("rb") as f:
-        f.seek(byte_off)
-        return f.read(nbytes)
-
-
 def total_seconds() -> float:
     return RAW16K.stat().st_size / BYTES_PER_SEC
 
 
 def ensure_segments() -> dict:
-    """Write full.wav + seg_XX.wav playback files and manifest.json."""
+    """Write full.wav + seg_XX.wav playback files and manifest.json.
+
+    The manifest is the source list for the API: full file + 60 s segments.
+    `start` is each segment's offset in the full file (used to map provider
+    timestamps back to absolute file positions).
+    """
     OUT.mkdir(exist_ok=True)
     total = total_seconds()
     raw = RAW16K.read_bytes()
@@ -117,16 +109,11 @@ def ensure_segments() -> dict:
             "label": f"Segment {i + 1} ({fmt(start)}-{fmt(start + dur)})",
             "start": start,
             "duration": dur,
-            "url": f"/audio/{name}",
+            "file": name,
         })
 
     manifest = {
-        "full": {
-            "id": "full",
-            "label": f"Full file ({fmt(total)})",
-            "duration": total,
-            "url": "/audio/full.wav",
-        },
+        "full": {"id": "full", "label": f"Full file ({fmt(total)})", "start": 0.0, "duration": total, "file": "full.wav"},
         "segments": segments,
     }
     MANIFEST.write_text(json.dumps(manifest, indent=2))

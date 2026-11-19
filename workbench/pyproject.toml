@@ -1,13 +1,15 @@
 [project]
 name = "relay-workbench"
-version = "0.1.0"
-description = "Local A/B workbench for live transcription providers (Speechmatics vs Gladia)"
+version = "0.2.0"
+description = "Backend-only A/B workbench: simulated live mic -> native Speechmatics/Gladia clients"
 requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.10",
     "numpy>=2.0",
     "scipy>=1.14",
     "python-dotenv>=1.0",
+    "speechmatics-rt>=1.3",
+    "gladiaio-sdk>=2.2",
 ]
 
 [tool.uv]

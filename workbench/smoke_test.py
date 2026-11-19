@@ -1,70 +1,114 @@
-"""End-to-end smoke test against a running server (http://127.0.0.1:8000).
+"""End-to-end smoke test against a running backend (http://127.0.0.1:8000).
 
-Selects segment 1, plays ~8s so both providers stream, pauses, seeks (must
-clear), replays from the seek point. Prints every message it receives.
+Selects seg_00, opens both arms via /listen/start, starts the simulated mic,
+polls /state + /transcripts until both arms have lines, stops listening
+(sim auto-pauses, position kept), re-listens at 30s, starts the sim, and
+checks that new transcripts carry file-absolute t0 >= 30. Also verifies the
+results/*.jsonl persistence.
 
-Run:  cd workbench && uv run python smoke_test.py
+Run:  cd workbench && uv run python smoke_test.py   (with server.py running)
 """
 
 import asyncio
+import json
+from pathlib import Path
 
 import aiohttp
 
 BASE = "http://127.0.0.1:8000"
 
 
-async def drain(ws, dur, tag):
-    got = []
-    loop = asyncio.get_event_loop()
-    end = loop.time() + dur
-    while loop.time() < end:
-        try:
-            m = await asyncio.wait_for(ws.receive_json(), timeout=max(0.1, end - loop.time()))
-        except asyncio.TimeoutError:
-            break
-        got.append(m)
-        if m["type"] == "transcript":
-            print(f"[{tag}] {m['model']} t={m['t0']:6.1f} partial={int(m.get('partial', False))} :: {m['text'][:100]}")
-        elif m["type"] in ("error", "closed", "state", "cleared", "source"):
-            extra = m.get("message") or m.get("model") or ("playing=" + str(m.get("playing"))) or m.get("source", {}).get("id", "")
-            print(f"[{tag}] {m['type']}: {extra}")
-    return got
+async def get(s, path):
+    async with s.get(f"{BASE}{path}") as r:
+        return r.status, await r.json()
+
+
+async def post(s, path, payload=None):
+    async with s.post(f"{BASE}{path}", json=payload or {}) as r:
+        return r.status, await r.json()
+
+
+async def poll(s, seconds, tag):
+    """Poll state+transcripts for `seconds`; return (state, lines_by_model)."""
+    end = asyncio.get_event_loop().time() + seconds
+    st = None
+    while asyncio.get_event_loop().time() < end:
+        _, st = await get(s, "/state")
+        await asyncio.sleep(1)
+    _, tr = await get(s, "/transcripts")
+    lines = {"A": [], "B": []}
+    for line in tr["lines"]:
+        if not line["partial"]:
+            lines[line["model"]].append(line)
+    print(f"[{tag}] state running={st['running']} pos={st['position']:.1f} "
+          f"listening={st['listening']} finals A={len(lines['A'])} B={len(lines['B'])}")
+    for m in ("A", "B"):
+        for line in lines[m][:4]:
+            print(f"[{tag}] {m} t={line['t0']:6.1f} :: {line['text'][:90]}")
+    return st, lines
 
 
 async def main():
     async with aiohttp.ClientSession() as s:
-        async with s.ws_connect(f"{BASE}/ws") as ws:
-            hello = await ws.receive_json()
-            assert hello["type"] == "hello", hello
-            print("HELLO source =", hello["source"]["id"], "| segments =", len(hello["manifest"]["segments"]))
+        st, h = await get(s, "/health")
+        assert st == 200 and h["ok"], h
+        assert h["keys"]["A"] and h["keys"]["B"], "API keys missing"
 
-            await ws.send_json({"cmd": "select", "id": "seg_00"})
-            msgs = await drain(ws, 2, "select")
-            assert any(m["type"] == "source" and m["source"]["id"] == "seg_00" for m in msgs), "no source msg"
+        st, srcs = await get(s, "/sources")
+        print(f"sources: full={srcs['full']['duration']:.0f}s segments={len(srcs['segments'])}")
 
-            await ws.send_json({"cmd": "play", "offset": 0})
-            msgs = await drain(ws, 15, "play")
-            ta = [m for m in msgs if m["type"] == "transcript" and m["model"] == "A"]
-            tb = [m for m in msgs if m["type"] == "transcript" and m["model"] == "B"]
-            print(f"PLAY transcripts: A={len(ta)} B={len(tb)}")
+        st, r = await post(s, "/source", {"id": "seg_00"})
+        assert st == 200 and r["source"]["id"] == "seg_00", r
 
-            await ws.send_json({"cmd": "pause"})
-            await drain(ws, 1, "pause")
+        # open both arms at 0s, then start the mic
+        st, r = await post(s, "/listen/start", {"model": "A", "offset": 0})
+        assert st == 200 and r["listening"]["A"], r
+        st, r = await post(s, "/listen/start", {"model": "B", "offset": 0})
+        assert st == 200 and r["listening"]["B"], r
+        st, r = await post(s, "/sim/start")
+        assert st == 200 and r["running"], r
 
-            await ws.send_json({"cmd": "seek", "offset": 30})
-            msgs = await drain(ws, 4, "seek")
-            assert any(m["type"] == "cleared" and m["model"] == "both" for m in msgs), "seek did not clear"
-            print("SEEK cleared both viewports OK")
+        st, lines = await poll(s, 25, "phase1")
+        assert st["running"], "sim not running"
+        assert st["position"] > 5, f"sim did not advance: {st['position']}"
+        assert lines["A"] and lines["B"], f"missing transcripts: A={len(lines['A'])} B={len(lines['B'])}"
 
-            await ws.send_json({"cmd": "play", "offset": 30})
-            msgs = await drain(ws, 6, "replay")
-            tb2 = [m for m in msgs if m["type"] == "transcript"]
-            print(f"REPLAY transcripts: {len(tb2)} (t0 should be >= 30: {all(m['t0'] >= 29.9 for m in tb2) if tb2 else 'n/a'})")
+        # stop listening -> sim auto-pauses, position kept
+        await post(s, "/listen/stop", {"model": "A"})
+        st, r = await post(s, "/listen/stop", {"model": "B"})
+        assert st == 200 and not r["running"], "sim did not pause after last listener stopped"
+        kept = r["position"]
+        print(f"sim paused at {kept:.1f}s (position kept)")
+        assert kept > 5
 
-            await ws.send_json({"cmd": "pause"})
-            await drain(ws, 1, "done")
-            ok = bool(ta) and bool(tb)
-            print("SMOKE OK (both arms transcribed)" if ok else "SMOKE DONE (missing transcripts: A=%d B=%d, check errors above)" % (len(ta), len(tb)))
+        # re-listen at 30s and restart the mic there
+        await post(s, "/listen/start", {"model": "A", "offset": 30})
+        await post(s, "/listen/start", {"model": "B", "offset": 30})
+        st, r = await post(s, "/sim/start")
+        assert st == 200 and r["running"] and abs(r["position"] - 30) < 0.6, r
+
+        st, lines = await poll(s, 20, "phase2")
+        a30 = [l for l in lines["A"] if l["t0"] >= 29]
+        b30 = [l for l in lines["B"] if l["t0"] >= 29]
+        print(f"phase2 transcripts with t0>=29: A={len(a30)} B={len(b30)}")
+        assert a30 and b30, "no correctly-timestamped transcripts after re-anchor at 30s"
+
+        # stop the sim; transcripts endpoint still serves everything
+        await post(s, "/sim/stop")
+        st, tr = await get(s, "/transcripts?model=A")
+        assert st == 200 and tr["count"] > 0, tr
+        print(f"GET /transcripts?model=A -> {tr['count']} lines")
+
+        # persistence file exists and is valid JSONL
+        jf = Path(__file__).parent / "results" / "live-seg_00.jsonl"
+        assert jf.exists(), f"missing {jf}"
+        n = sum(1 for _ in jf.open())
+        rows = [json.loads(l) for l in jf.open()]
+        assert all({"model", "t0", "t1", "text", "partial"} <= set(r) for r in rows)
+        print(f"results/live-seg_00.jsonl -> {n} valid JSONL rows")
+
+        print("SMOKE TEST OK")
 
 
-asyncio.run(main())
+if __name__ == "__main__":
+    asyncio.run(main())
