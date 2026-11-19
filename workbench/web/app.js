@@ -74,6 +74,7 @@ function handleEvent(msg) {
 }
 
 function handleEventInner(msg) {
+  if (!panels.A) return; // panels not built yet during boot
   switch (msg.type) {
     case "state":
       applyState(msg);
@@ -95,20 +96,45 @@ function handleEventInner(msg) {
   }
 }
 
+function setConn(on) {
+  conn.dataset.state = on ? "on" : "off";
+  connText.textContent = on ? "connected" : "offline (polling)";
+  conn.setAttribute("aria-label", "connection: " + (on ? "connected" : "offline, polling"));
+}
+
+let pollTimer = null;
+
 async function boot() {
-  [manifest, schema, configs] = await Promise.all([
-    getJSON("/sources"),
-    getJSON("/config/schema"),
-    getJSON("/configs"),
-  ]);
-  fillSources();
-  makePanels();
-  applyState(await getJSON("/state"));
+  // connect the event stream FIRST and independently, so a failure in any
+  // later boot step can never leave the UI without state updates
   connectEvents(handleEvent, (on) => {
-    conn.dataset.state = on ? "on" : "off";
-    connText.textContent = on ? "connected" : "offline";
-    conn.setAttribute("aria-label", "connection: " + (on ? "connected" : "offline"));
+    setConn(on);
+    if (!on && !pollTimer) {
+      // SSE down: fall back to polling /state so the UI still tracks the backend
+      pollTimer = setInterval(async () => {
+        try {
+          const st = await getJSON("/state");
+          if (panels.A) applyState(st);
+        } catch { /* keep polling */ }
+      }, 2000);
+    } else if (on && pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
   });
+  try {
+    [manifest, schema, configs] = await Promise.all([
+      getJSON("/sources"),
+      getJSON("/config/schema"),
+      getJSON("/configs"),
+    ]);
+    fillSources();
+    makePanels();
+    applyState(await getJSON("/state"));
+  } catch (e) {
+    console.error("boot failed:", e);
+    connText.textContent = "backend error - see console";
+  }
 }
 
 sourceSel.addEventListener("change", () => {
@@ -124,7 +150,6 @@ shuffleBtn.addEventListener("click", () => {
 });
 
 boot().catch((e) => {
-  conn.dataset.state = "off";
-  connText.textContent = "offline";
+  setConn(false);
   console.error(e);
 });

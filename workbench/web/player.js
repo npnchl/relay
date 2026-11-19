@@ -62,7 +62,7 @@ export function initSourcePlayer() {
       audio.src = `/audio/${src.file}`;
       scrub.max = src.duration;
       updateTime();
-      updateStatus();
+      setBtn();
     },
     // jump to a source-relative position (transcript lines carry file-absolute t0)
     jumpTo(localT) {
