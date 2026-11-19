@@ -209,6 +209,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   let autoScroll = true;
   let listening = false;
   let dropped = false;
+  let pending = false;
 
   function renderForm() {
     form.replaceChildren();
@@ -247,8 +248,12 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   });
 
   function setListenState() {
-    listenBtn.classList.remove("on", "danger", "accent");
-    if (listening) {
+    listenBtn.classList.remove("on", "danger");
+    listenBtn.disabled = pending;
+    if (pending) {
+      listenBtn.innerHTML = `${I.play}<span>Starting…</span>`;
+      listenBtn.setAttribute("aria-pressed", "false");
+    } else if (listening) {
       listenBtn.classList.add("on");
       listenBtn.innerHTML = `${I.stop}<span>Listening</span>`;
       listenBtn.setAttribute("aria-pressed", "true");
@@ -263,8 +268,11 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   }
 
   listenBtn.addEventListener("click", () => {
+    if (pending) return;
     dropped = false;
+    pending = true; // immediate feedback; cleared by the next state event or timeout
     setListenState();
+    setTimeout(() => { if (pending) { pending = false; setListenState(); } }, 12000);
     onListen(listening);
   });
   trash.addEventListener("click", () => onClear());
@@ -300,14 +308,16 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   });
 
   function setState(st) {
+    if (st.sessions && st.sessions[model]) pending = false; // session confirmed open
     listening = !!(st.listening && st.listening[model]);
     const open = !!(st.sessions && st.sessions[model]);
     if (open) dropped = false;
-    else if (listening && !open) dropped = true;
+    else if (listening && !open && !pending) dropped = true;
     setListenState();
   }
 
   function setDrop(text) {
+    pending = false;
     dropped = true;
     listening = false;
     setListenState();

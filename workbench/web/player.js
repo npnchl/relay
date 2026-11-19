@@ -81,11 +81,15 @@ export function initSimPlayer() {
   let scrubbing = false;
   let running = false;
   let ended = false;
+  let pending = false;
 
   // the button owns the state, like the model Listen buttons
   const setBtn = () => {
+    playBtn.disabled = pending;
     playBtn.classList.remove("on");
-    if (running) {
+    if (pending) {
+      playBtn.innerHTML = `${ICON_PLAY}<span>${running ? "Stopping…" : "Starting…"}</span>`;
+    } else if (running) {
       playBtn.innerHTML = `${ICON_PAUSE}<span>Running</span>`;
       playBtn.classList.add("on");
       playBtn.setAttribute("aria-label", "Stop simulated mic");
@@ -100,15 +104,18 @@ export function initSimPlayer() {
   };
 
   playBtn.addEventListener("click", async () => {
-    playBtn.disabled = true;
+    if (pending) return;
+    pending = true; // immediate feedback; cleared by the next state event or timeout
+    setBtn();
+    setTimeout(() => { if (pending) { pending = false; setBtn(); } }, 12000);
     try {
       if (running) await postJSON("/sim/stop");
       else await postJSON("/sim/start");
     } catch (e) {
       statusEl.textContent = String(e.message || e);
       statusEl.className = "pstatus err";
-    } finally {
-      playBtn.disabled = false;
+      pending = false;
+      setBtn();
     }
   });
   scrub.addEventListener("input", () => {
@@ -117,6 +124,8 @@ export function initSimPlayer() {
   });
   scrub.addEventListener("change", async () => {
     scrubbing = false;
+    statusEl.textContent = "seeking…"; // cleared by the next state event
+    statusEl.className = "pstatus";
     try {
       await postJSON("/sim/seek", { offset: Number(scrub.value) });
     } catch (e) {
@@ -129,6 +138,7 @@ export function initSimPlayer() {
   function applyState(st) {
     running = !!st.running;
     ended = !!st.ended;
+    pending = false;
     setBtn();
     const dur = st.source ? st.source.duration : 0;
     scrub.max = dur;

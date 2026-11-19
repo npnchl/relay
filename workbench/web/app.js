@@ -66,6 +66,14 @@ function applyState(st) {
 }
 
 function handleEvent(msg) {
+  try {
+    handleEventInner(msg);
+  } catch (e) {
+    console.error("event handling failed:", e);
+  }
+}
+
+function handleEventInner(msg) {
   switch (msg.type) {
     case "state":
       applyState(msg);

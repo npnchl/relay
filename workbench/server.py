@@ -468,14 +468,15 @@ async def listen_start(request):
             return json_resp(state_json())  # already listening: no-op
         # pause the stream while the session connects so base_offset is exact
         await stop_sender()
+    state["listening"][model] = True
+    broadcast_state()  # intent immediately - UIs update without waiting for the connect
     ok = await open_session(model, state["source"]["start"] + state["position"])
     state["listening"][model] = ok
     if was_running:
         start_sender()
-    if not ok:
-        broadcast_state()
-        return json_resp({"error": f"session {model} failed to start", "state": state_json()}, status=502)
     broadcast_state()
+    if not ok:
+        return json_resp({"error": f"session {model} failed to start", "state": state_json()}, status=502)
     return json_resp(state_json())
 
 
@@ -518,6 +519,7 @@ async def config_post(request):
         if bad_keys:
             return await bad(f"melia-1 does not allow: {', '.join(sorted(bad_keys))} (Enhanced-only knobs)")
     state["configs"][model] = cfg
+    broadcast_state()  # config stored; session restart below may take seconds
     if state["listening"][model] and state["source"] is not None:
         # restart this arm at the current position so the new config takes effect now
         was_running = state["running"]
