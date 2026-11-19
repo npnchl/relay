@@ -1,4 +1,6 @@
 {
+  // Sort Explorer entries by type: folders first, then files grouped by extension
+  "explorer.sortOrder": "type",
   // Hide generated/clutter files from the Explorer (they stay on disk and
   // remain openable via Quick Open - this only affects the file tree).
   "files.exclude": {
