@@ -124,6 +124,7 @@ select {
   flex-shrink: 0;
 }
 .panel-head .model-name { flex-shrink: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.norm-tag { flex-shrink: 0; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ok); border: 1px solid var(--ok); border-radius: 4px; padding: 1px 5px; }
 /* only the button strip scrolls (when it overflows); the label stays fixed.
    Scrollbar is hidden - scroll via trackpad/shift-wheel. */
 .head-actions {

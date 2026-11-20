@@ -292,6 +292,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   root.innerHTML = `
     <header class="panel-head">
       <span class="model-name">${label}</span>
+      <span class="norm-tag" hidden>normalized</span>
       <div class="head-actions">
         <span class="spacer"></span>
         <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
@@ -309,8 +310,12 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     <div class="viewport" aria-live="polite" role="log"></div>`;
 
   const vp = root.querySelector(".viewport");
+  const normTag = root.querySelector(".norm-tag");
   const lines = []; // raw lines in memory; normalize renders a derived copy of these
+  // filter state: fully on or fully off, applies to existing AND incoming lines,
+  // independent of whether the sim is running; persisted across reloads
   let normalize = false;
+  try { normalize = globalThis.localStorage && localStorage.getItem("norm-" + model) === "1"; } catch { /* private mode */ }
   // keys of lines already rendered - only NEW lines get the reveal animation
   const seenKeys = new Set();
   const keyOf = (l) => `${l.t0}|${l.t1}|${l.text}|${!!l.partial}`;
@@ -409,6 +414,8 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     setNormalize(!normalize);
     normBtn.classList.toggle("on", normalize);
     normBtn.setAttribute("aria-pressed", String(normalize));
+    normTag.hidden = !normalize;
+    try { globalThis.localStorage && localStorage.setItem("norm-" + model, normalize ? "1" : "0"); } catch { /* ignore */ }
   });
   scrollBtn.addEventListener("click", () => {
     autoScroll = !autoScroll;
@@ -497,15 +504,14 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
 
   function renderLines(animateNew) {
     let view;
-    if (normalize) {
-      view = normalizeLines(lines);
-      const lastPartial = [...lines].reverse().find((l) => l.partial);
-      if (lastPartial) view = [...view, lastPartial];
-    } else {
+    try {
+      view = normalize ? normalizeLines(lines) : lines.filter((l) => !l.partial);
+    } catch (e) {
+      console.error("normalize failed, showing raw:", e);
       view = lines.filter((l) => !l.partial);
-      const lastPartial = [...lines].reverse().find((l) => l.partial);
-      if (lastPartial) view = [...view, lastPartial];
     }
+    const lastPartial = [...lines].reverse().find((l) => l.partial);
+    if (lastPartial) view = [...view, lastPartial];
     if (!animateNew) for (const l of view) seenKeys.add(keyOf(l)); // boot/toggle: no replay
     vp.innerHTML = "";
     for (const line of view) vp.appendChild(makeLineEl(line, animateNew));
@@ -536,5 +542,8 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
 
   renderForm(); // last on purpose: a form-rendering error must never kill the listeners above
   setListenState();
+  normTag.hidden = !normalize;
+  normBtn.classList.toggle("on", normalize);
+  normBtn.setAttribute("aria-pressed", String(normalize));
   return { setState, setDrop, addLine, clear, setLines, setNormalize };
 }
