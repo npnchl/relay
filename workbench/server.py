@@ -418,6 +418,8 @@ async def sim_start(request):
     if state["source"] is None:
         return await bad("select a source first (POST /source)")
     offset = b.get("offset")
+    if offset is None and state["ended"]:
+        offset = 0.0  # Replay: sim reached the end, so restart from the beginning
     if offset is not None:
         offset = min(max(0.0, float(offset)), state["source"]["duration"])
         if abs(state["position"] - offset) > 0.5:
