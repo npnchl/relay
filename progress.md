@@ -63,3 +63,55 @@ judge.
 3. Keep a small set of 1-min segments (incl. code-switching spans) as a
    repeatable benchmark; score with normalized WER + disagreement flags
    + human ear-checks.
+
+## Workbench rebuild + Gladia live settings experiment (2026-11-20)
+
+### Workbench state
+Backend-only aiohttp service (`workbench/server.py`, run with
+`cd workbench && uv run python server.py` → http://127.0.0.1:8000) + vanilla JS
+frontend (`workbench/web/`, GitHub Dark Dimmed). Native clients only:
+arm A = `speechmatics-rt` AsyncClient (melia-1, wss://eu.rt.speechmatics.com/v2),
+arm B = `gladiaio-sdk` live v2 (solaria-1 — the only model the SDK pins for live;
+solaria-3/solaria-fusion are prerecorded-only). Server-side simulated mic streams the
+cached 16 kHz mono PCM in 40 ms chunks at strict 1× wall-clock pace (gapless, never
+skips bytes). Listen start/stop per arm is manual and independent of sim
+start/stop/seek; a provider drop marks the arm not-listening (no silent reconnect);
+Replay restarts from 0 after the source ends. All SDK settings are exposed via
+`/config/schema` (two-tier form: Core + collapsed "All provider options") and
+validated server-side (400 with field paths). Transcripts live in memory +
+`workbench/results/live-*.jsonl`, pushed over SSE `/events`. The Normalize toggle is a
+view-only sentence re-segmentation of the in-memory lines (raw output untouched), one
+button per panel.
+
+### Gladia live v2 settings experiment
+Method: sim streamed seg_00 (00:00–01:00, Matthew 3:1–6) and seg_02 (05:00–06:00) at 1×
+with arm A (Speechmatics melia-1) as reference segmentation and arm B across a config
+grid. Driver + raw outputs: `workbench/experiments/gladia-settings-2026-11-20/`.
+
+Findings (seg_00 unless noted):
+- `endpointing 0.5` / `max_duration 10` → over-splits mid-sentence (11 finals).
+- `maximum_duration_without_endpointing 8` → the cap force-splits long sentences and
+  garbles the merge; needs to be ≥ ~15.
+- `endpointing 1.0–1.2` → merges across verse boundaries (v1 + start of v3).
+- `speech_threshold 1.0` → enhancer treats quiet speech as silence → fake gaps inside
+  sentences → verse 4 shattered into 3 fragments + garbled v4/v5 merge.
+- `speech_threshold 0.5` → clean verse-per-final breaks, but quiet background noise gets
+  transcribed as words ("Thanks." at 00:05; Speechmatics never emitted it).
+- **`speech_threshold 0.8` is the sweet spot**: no noise pickup AND each verse one whole
+  final ("…locusts and wild honey." complete). thr 0.7 still leaks one noise fragment.
+- Speechmatics melia-1 over-splits more than any Gladia config on this material
+  (seg_00: v1 broken as "…came preaching in the" / "wilderness of Judea…").
+
+### Recommended Gladia live config (raw output — no Normalize needed)
+```json
+{
+  "encoding": "wav/pcm", "bit_depth": 16, "sample_rate": 16000, "channels": 1,
+  "model": "solaria-1",
+  "language_config": { "languages": ["en", "de"], "code_switching": true },
+  "endpointing": 0.8,
+  "maximum_duration_without_endpointing": 15,
+  "pre_processing": { "audio_enhancer": true, "speech_threshold": 0.8 },
+  "messages_config": { "receive_partial_transcripts": false, "receive_final_transcripts": true }
+}
+```
+Set via the Gladia settings panel (Core section) and Apply.

@@ -1,0 +1,86 @@
+{
+ "label": "ep12_m15",
+ "seg": "seg_00",
+ "lines": [
+  {
+   "wall": 1795157983.957,
+   "model": "B",
+   "t0": 2.156,
+   "t1": 4.967,
+   "text": "Matthew 3 is one to six.",
+   "partial": false
+  },
+  {
+   "wall": 1795157984.965,
+   "model": "A",
+   "t0": 2.16,
+   "t1": 5.08,
+   "text": "Matthew three verses 1 to 6.",
+   "partial": false
+  },
+  {
+   "wall": 1795157996.973,
+   "model": "A",
+   "t0": 6.61,
+   "t1": 17.1,
+   "text": "In those days, John the Baptist came preaching in the",
+   "partial": false
+  },
+  {
+   "wall": 1795158003.246,
+   "model": "B",
+   "t0": 12.813,
+   "t1": 24.056,
+   "text": "In those days, John the Baptist came preaching in the wilderness of Judea and saying, repent, for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795158004.474,
+   "model": "A",
+   "t0": 17.1,
+   "t1": 24.18,
+   "text": "wilderness of Judea and saying, repent for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795158016.13,
+   "model": "B",
+   "t0": 25.64,
+   "t1": 36.648,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, The voice of one crying in the wilderness, Pair the way of the Lord, make his path straight.",
+   "partial": false
+  },
+  {
+   "wall": 1795158016.501,
+   "model": "A",
+   "t0": 25.69,
+   "t1": 35.74,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, the voice of one crying in the wilderness prepare the way of the Lord. Make his",
+   "partial": false
+  },
+  {
+   "wall": 1795158024.01,
+   "model": "A",
+   "t0": 35.75,
+   "t1": 44.53,
+   "text": "paths straight. Now John himself was clothed in camel's hair with a leather belt around his waist.",
+   "partial": false
+  },
+  {
+   "wall": 1795158029.196,
+   "model": "B",
+   "t0": 38.372,
+   "t1": 49.528,
+   "text": "Now John himself was clothed in camel's hair with a leather belt around his waist and his food was locusts and wild honey.",
+   "partial": false
+  },
+  {
+   "wall": 1795158030.004,
+   "model": "A",
+   "t0": 45.36,
+   "t1": 49.62,
+   "text": "And his food was locusts and wild honey.",
+   "partial": false
+  }
+ ]
+}

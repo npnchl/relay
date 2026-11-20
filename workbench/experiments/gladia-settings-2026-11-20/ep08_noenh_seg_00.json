@@ -1,0 +1,94 @@
+{
+ "label": "ep08_noenh",
+ "seg": "seg_00",
+ "lines": [
+  {
+   "wall": 1795158108.199,
+   "model": "A",
+   "t0": 2.16,
+   "t1": 5.08,
+   "text": "Matthew three verses 1 to 6.",
+   "partial": false
+  },
+  {
+   "wall": 1795158107.511,
+   "model": "B",
+   "t0": 2.161,
+   "t1": 4.946,
+   "text": "Matthew 3, verses 1 to 6.",
+   "partial": false
+  },
+  {
+   "wall": 1795158120.2,
+   "model": "A",
+   "t0": 6.61,
+   "t1": 17.1,
+   "text": "In those days, John the Baptist came preaching in the",
+   "partial": false
+  },
+  {
+   "wall": 1795158126.599,
+   "model": "B",
+   "t0": 12.797,
+   "t1": 24.144,
+   "text": "In those days, John the Baptist came preaching in the wilderness of Judea and saying, repent, for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795158127.724,
+   "model": "A",
+   "t0": 17.1,
+   "t1": 24.18,
+   "text": "wilderness of Judea and saying, repent for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795158138.815,
+   "model": "B",
+   "t0": 25.653,
+   "t1": 36.644,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, The voice of one crying in the wilderness, Prepare the way of the Lord, make his path straight.",
+   "partial": false
+  },
+  {
+   "wall": 1795158139.737,
+   "model": "A",
+   "t0": 25.69,
+   "t1": 35.74,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, the voice of one crying in the wilderness prepare the way of the Lord. Make his",
+   "partial": false
+  },
+  {
+   "wall": 1795158147.241,
+   "model": "A",
+   "t0": 35.75,
+   "t1": 44.53,
+   "text": "paths straight. Now John himself was clothed in camel's hair with a leather belt around his waist.",
+   "partial": false
+  },
+  {
+   "wall": 1795158152.087,
+   "model": "B",
+   "t0": 38.37,
+   "t1": 49.54,
+   "text": "Now John himself was clothed in camel's hair with a leather belt around his waist and his food was locusts and wild honey.",
+   "partial": false
+  },
+  {
+   "wall": 1795158153.249,
+   "model": "A",
+   "t0": 45.36,
+   "t1": 49.62,
+   "text": "And his food was locusts and wild honey.",
+   "partial": false
+  },
+  {
+   "wall": 1795158160.826,
+   "model": "A",
+   "t0": 51.7,
+   "t1": 59.12,
+   "text": "Then Jerusalem, all Judea, and all the region around the Jordan went out to him.",
+   "partial": false
+  }
+ ]
+}

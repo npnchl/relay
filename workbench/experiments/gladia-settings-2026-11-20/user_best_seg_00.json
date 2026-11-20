@@ -1,0 +1,110 @@
+{
+ "label": "user_best",
+ "seg": "seg_00",
+ "lines": [
+  {
+   "wall": 1795157204.461,
+   "model": "B",
+   "t0": 2.156,
+   "t1": 4.967,
+   "text": "Matthew 3 is one to six.",
+   "partial": false
+  },
+  {
+   "wall": 1795157205.93,
+   "model": "A",
+   "t0": 2.16,
+   "t1": 5.08,
+   "text": "Matthew three verses 1 to 6.",
+   "partial": false
+  },
+  {
+   "wall": 1795157217.939,
+   "model": "A",
+   "t0": 6.61,
+   "t1": 17.1,
+   "text": "In those days, John the Baptist came preaching in the",
+   "partial": false
+  },
+  {
+   "wall": 1795157223.326,
+   "model": "B",
+   "t0": 12.798,
+   "t1": 23.792,
+   "text": "In those days, John the Baptist came preaching in the wilderness of Judea and saying, Repent, for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795157225.443,
+   "model": "A",
+   "t0": 17.1,
+   "t1": 24.18,
+   "text": "wilderness of Judea and saying, repent for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795157231.894,
+   "model": "B",
+   "t0": 25.658,
+   "t1": 32.243,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, The voice of one crying in the wilderness.",
+   "partial": false
+  },
+  {
+   "wall": 1795157237.428,
+   "model": "A",
+   "t0": 25.69,
+   "t1": 35.74,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, the voice of one crying in the wilderness prepare the way of the Lord. Make his",
+   "partial": false
+  },
+  {
+   "wall": 1795157236.557,
+   "model": "B",
+   "t0": 33.184,
+   "t1": 36.654,
+   "text": "Prepare the way of the Lord. Make his path straight.",
+   "partial": false
+  },
+  {
+   "wall": 1795157244.942,
+   "model": "A",
+   "t0": 35.75,
+   "t1": 44.53,
+   "text": "paths straight. Now John himself was clothed in camel's hair with a leather belt around his waist.",
+   "partial": false
+  },
+  {
+   "wall": 1795157244.18,
+   "model": "B",
+   "t0": 38.365,
+   "t1": 44.464,
+   "text": "Now John himself was clothed in camel's hair with a leather belt around his waist.",
+   "partial": false
+  },
+  {
+   "wall": 1795157250.931,
+   "model": "A",
+   "t0": 45.36,
+   "t1": 49.62,
+   "text": "And his food was locusts and wild honey.",
+   "partial": false
+  },
+  {
+   "wall": 1795157247.385,
+   "model": "B",
+   "t0": 45.418,
+   "t1": 47.872,
+   "text": "and his food was locusts.",
+   "partial": false
+  },
+  {
+   "wall": 1795157256.907,
+   "model": "B",
+   "t0": 48.583,
+   "t1": 57.358,
+   "text": "and wild Then Jerusalem Old Judea and all the region around the Jordan.",
+   "partial": false
+  }
+ ]
+}

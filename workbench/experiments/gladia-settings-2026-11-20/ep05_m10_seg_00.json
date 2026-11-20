@@ -1,0 +1,142 @@
+{
+ "label": "ep05_m10",
+ "seg": "seg_00",
+ "lines": [
+  {
+   "wall": 1795157264.94,
+   "model": "B",
+   "t0": 2.153,
+   "t1": 4.86,
+   "text": "Matthew 3 Verses 1 to 6.",
+   "partial": false
+  },
+  {
+   "wall": 1795157266.744,
+   "model": "A",
+   "t0": 2.16,
+   "t1": 5.08,
+   "text": "Matthew three verses 1 to 6.",
+   "partial": false
+  },
+  {
+   "wall": 1795157278.745,
+   "model": "A",
+   "t0": 6.61,
+   "t1": 17.1,
+   "text": "In those days, John the Baptist came preaching in the",
+   "partial": false
+  },
+  {
+   "wall": 1795157276.381,
+   "model": "B",
+   "t0": 12.799,
+   "t1": 16.175,
+   "text": "In those days, John the Baptist came preaching.",
+   "partial": false
+  },
+  {
+   "wall": 1795157283.947,
+   "model": "B",
+   "t0": 16.997,
+   "t1": 23.792,
+   "text": "the wilderness of Judea and saying repent, for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795157286.247,
+   "model": "A",
+   "t0": 17.1,
+   "t1": 24.18,
+   "text": "wilderness of Judea and saying, repent for the kingdom of heaven is at hand.",
+   "partial": false
+  },
+  {
+   "wall": 1795157292.442,
+   "model": "B",
+   "t0": 25.658,
+   "t1": 32.243,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, The voice of one crying in the wilderness.",
+   "partial": false
+  },
+  {
+   "wall": 1795157298.238,
+   "model": "A",
+   "t0": 25.69,
+   "t1": 35.74,
+   "text": "For this is he who was spoken of by the prophet Isaiah, saying, the voice of one crying in the wilderness prepare the way of the Lord. Make his",
+   "partial": false
+  },
+  {
+   "wall": 1795157294.789,
+   "model": "B",
+   "t0": 33.185,
+   "t1": 34.735,
+   "text": "Prepare the way of the Lord.",
+   "partial": false
+  },
+  {
+   "wall": 1795157296.716,
+   "model": "B",
+   "t0": 35.299,
+   "t1": 36.63,
+   "text": "Make his path straight.",
+   "partial": false
+  },
+  {
+   "wall": 1795157305.743,
+   "model": "A",
+   "t0": 35.75,
+   "t1": 44.53,
+   "text": "paths straight. Now John himself was clothed in camel's hair with a leather belt around his waist.",
+   "partial": false
+  },
+  {
+   "wall": 1795157301.643,
+   "model": "B",
+   "t0": 38.366,
+   "t1": 41.52,
+   "text": "Now John himself was clothed in camel's hair.",
+   "partial": false
+  },
+  {
+   "wall": 1795157304.692,
+   "model": "B",
+   "t0": 42.26,
+   "t1": 44.478,
+   "text": "with a leather belt around his waist.",
+   "partial": false
+  },
+  {
+   "wall": 1795157311.735,
+   "model": "A",
+   "t0": 45.36,
+   "t1": 49.62,
+   "text": "And his food was locusts and wild honey.",
+   "partial": false
+  },
+  {
+   "wall": 1795157307.82,
+   "model": "B",
+   "t0": 45.42,
+   "t1": 47.854,
+   "text": "And his food was locusts.",
+   "partial": false
+  },
+  {
+   "wall": 1795157317.398,
+   "model": "B",
+   "t0": 48.597,
+   "t1": 57.358,
+   "text": "and wild Then Jerusalem Old Judea and all the region around the Jordan.",
+   "partial": false
+  },
+  {
+   "wall": 1795157319.151,
+   "model": "B",
+   "t0": 58.337,
+   "t1": 59.065,
+   "text": "went out to him.",
+   "partial": false
+  }
+ ]
+}
