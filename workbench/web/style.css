@@ -141,6 +141,21 @@ select {
 .line.partial .txt { color: var(--muted-fg); }
 .line.err .txt { color: var(--danger); }
 
+/* live-feel reveal: a newly arrived final block animates its words in with a
+   quick stagger, so the transcript feels realtime instead of popping in whole.
+   Purely cosmetic - the data and timestamps are untouched. */
+.line .w { display: inline-block; opacity: 0; animation: word-in 0.16s ease-out forwards; }
+@keyframes word-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.line.partial .txt { animation: partial-pulse 1.4s ease-in-out infinite; }
+@keyframes partial-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.65; } }
+@media (prefers-reduced-motion: reduce) {
+  .line .w { animation: none; opacity: 1; }
+  .line.partial .txt { animation: none; }
+}
+
 /* ---------- settings popover ---------- */
 .popover {
   position: absolute;

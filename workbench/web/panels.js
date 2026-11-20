@@ -309,6 +309,9 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   const vp = root.querySelector(".viewport");
   const lines = []; // raw lines in memory; normalize renders a derived copy of these
   let normalize = false;
+  // keys of lines already rendered - only NEW lines get the reveal animation
+  const seenKeys = new Set();
+  const keyOf = (l) => `${l.t0}|${l.t1}|${l.text}|${!!l.partial}`;
   const listenBtn = root.querySelector(".listen");
   const listenTxt = listenBtn.querySelector("span");
   const normBtn = root.querySelector(".norm");
@@ -455,7 +458,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     listenBtn.title = text;
   }
 
-  function makeLineEl(line) {
+  function makeLineEl(line, animate) {
     const div = document.createElement("div");
     div.className = "line jump" + (line.partial ? " partial" : "");
     div.title = "Jump source player to this timestamp";
@@ -464,14 +467,33 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     ts.textContent = fmtTime(line.t0);
     const txt = document.createElement("span");
     txt.className = "txt";
-    txt.textContent = line.text;
+    if (animate && !line.partial && !seenKeys.has(keyOf(line))) {
+      // word-by-word staggered reveal for newly arrived finals (cosmetic only)
+      const words = line.text.split(/(\s+)/);
+      const nWords = Math.max(1, words.filter((w) => w.trim()).length);
+      const step = Math.min(45, 900 / nWords); // cap total reveal at ~0.9 s
+      let delay = 0;
+      for (const w of words) {
+        if (!w.trim()) {
+          txt.appendChild(document.createTextNode(w));
+          continue;
+        }
+        const s = document.createElement("span");
+        s.className = "w";
+        s.textContent = w;
+        s.style.animationDelay = `${Math.round(delay)}ms`;
+        delay += step;
+        txt.appendChild(s);
+      }
+    } else {
+      txt.textContent = line.text;
+    }
     div.append(ts, txt);
     div.addEventListener("click", () => onJump(line.t0));
     return div;
   }
 
-  function renderLines() {
-    vp.innerHTML = "";
+  function renderLines(animateNew) {
     let view;
     if (normalize) {
       view = normalizeLines(lines);
@@ -482,24 +504,27 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
       const lastPartial = [...lines].reverse().find((l) => l.partial);
       if (lastPartial) view = [...view, lastPartial];
     }
-    for (const line of view) vp.appendChild(makeLineEl(line));
+    if (!animateNew) for (const l of view) seenKeys.add(keyOf(l)); // boot/toggle: no replay
+    vp.innerHTML = "";
+    for (const line of view) vp.appendChild(makeLineEl(line, animateNew));
+    if (animateNew) for (const l of view) seenKeys.add(keyOf(l));
     if (autoScroll) vp.scrollTop = vp.scrollHeight;
   }
 
   function addLine(line) {
     lines.push(line);
-    renderLines();
+    renderLines(true); // animate only the newly arrived line
   }
 
   function setLines(arr) {
     lines.length = 0;
     lines.push(...arr);
-    renderLines();
+    renderLines(false);
   }
 
   function setNormalize(on) {
     normalize = !!on;
-    renderLines();
+    renderLines(false); // re-render without replaying the reveal animation
   }
 
   function clear() {
