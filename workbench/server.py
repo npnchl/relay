@@ -83,6 +83,9 @@ state = {
     "sender": None,
     "log": {"A": [], "B": []},
     "ended": False,  # sim reached the end of the source
+    "suppress": False,  # noise-suppression toggle from the sim card; sim-side DSP
+                       # algorithm is intentionally not implemented yet - the flag
+                       # is stored + broadcast so it is ready when it lands
 }
 
 SENT_END = (".", "!", "?", "।")  # sentence-final punctuation incl. Hindi danda
@@ -337,6 +340,7 @@ def state_json() -> dict:
         "listening": dict(state["listening"]),
         "sessions": {m: bool(state["sessions"][m] and state["sessions"][m].open) for m in ("A", "B")},
         "ended": state["ended"],
+        "suppress": state["suppress"],
     }
 
 
@@ -454,6 +458,15 @@ async def sim_stop(request):
     log(f"sim paused at {state['position']:.1f}s")
     broadcast_state()
     return json_resp(state_json())
+
+
+async def sim_suppress(request):
+    """Toggle noise suppression. Source-player filtering is client-side; the sim
+    side stores the flag for now (DSP algorithm deliberately not implemented yet)."""
+    b = await body(request)
+    state["suppress"] = bool(b.get("on"))
+    broadcast_state()
+    return json_resp({"suppress": state["suppress"]})
 
 
 async def listen_start(request):
@@ -767,6 +780,7 @@ def make_app() -> web.Application:
     app.router.add_get("/state", state_get)
     app.router.add_post("/sim/start", sim_start)
     app.router.add_post("/sim/stop", sim_stop)
+    app.router.add_post("/sim/suppress", sim_suppress)
     app.router.add_post("/sim/seek", sim_seek)
     app.router.add_post("/listen/start", listen_start)
     app.router.add_post("/listen/stop", listen_stop)

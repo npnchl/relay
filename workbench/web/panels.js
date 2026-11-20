@@ -298,12 +298,12 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
       <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">${I.scroll}<span>Auto-scroll</span></button>
       <button class="btn gear" title="Settings for ${label}">${I.gear}<span>Settings</span></button>
       <button class="btn trash" title="Clear transcript ${model}">${I.trash}<span>Clear</span></button>
-      <div class="popover" hidden>
-        <div class="pop-title">${label} settings</div>
-        <div class="pop-body"><div class="form"></div></div>
-        <div class="pop-foot"><button class="apply">Apply</button><button class="reset">Reset</button><span class="cfg-status" role="status"></span></div>
-      </div>
     </header>
+    <div class="popover" hidden>
+      <div class="pop-title">${label} settings</div>
+      <div class="pop-body"><div class="form"></div></div>
+      <div class="pop-foot"><button class="apply">Apply</button><button class="reset">Reset</button><span class="cfg-status" role="status"></span></div>
+    </div>
     <div class="viewport" aria-live="polite" role="log"></div>`;
 
   const vp = root.querySelector(".viewport");

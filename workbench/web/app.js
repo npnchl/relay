@@ -145,6 +145,18 @@ sourceSel.addEventListener("change", () => {
   shuffleBtn.hidden = selectValue !== "random";
   postJSON("/source", { id: selectValue }).catch((e) => console.warn(e));
 });
+
+// one shared Suppress toggle on the sim card: filters the source player audio
+// immediately AND flags the sim stream on the backend (sim-side DSP pending)
+const suppressBtn = $("#sim-suppress");
+let suppress = false;
+suppressBtn.addEventListener("click", () => {
+  suppress = !suppress;
+  suppressBtn.classList.toggle("on", suppress);
+  suppressBtn.setAttribute("aria-pressed", String(suppress));
+  sourcePlayer.setSuppress(suppress);
+  postJSON("/sim/suppress", { on: suppress }).catch((e) => console.warn(e));
+});
 shuffleBtn.addEventListener("click", () => {
   selectValue = "random";
   sourceSel.value = "random";

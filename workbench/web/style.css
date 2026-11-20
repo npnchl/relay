@@ -104,6 +104,8 @@ select {
   min-height: 0;
 }
 .panel {
+  position: relative; /* anchor for the settings popover (kept out of .panel-head
+                         so the head can scroll horizontally without clipping it) */
   display: flex;
   flex-direction: column;
   background: var(--card);
@@ -120,9 +122,14 @@ select {
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  overflow-x: auto;   /* button stack scrolls horizontally instead of overflowing the panel */
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
+.panel-head .model-name,
+.panel-head .btn { flex-shrink: 0; }
 .model-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
-.spacer { flex: 1; }
+.spacer { flex: 1 0 6px; }
 
 .viewport {
   flex: 1;
@@ -159,7 +166,7 @@ select {
 /* ---------- settings popover ---------- */
 .popover {
   position: absolute;
-  top: calc(100% + 6px);
+  top: 44px; /* just below the panel header */
   right: 8px;
   width: 400px;
   max-width: 94vw;

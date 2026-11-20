@@ -13,6 +13,7 @@ export function initSourcePlayer() {
   const timeEl = document.getElementById("src-time");
   const statusEl = document.getElementById("src-status");
   let scrubbing = false;
+  let suppressGraph = null; // {ctx, src, hp, dest} - created once, bypassed when off
 
   // the button owns the state, like the model Listen buttons
   const setBtn = () => {
@@ -57,7 +58,37 @@ export function initSourcePlayer() {
     }
   });
 
+  // One shared Suppress toggle (lives on the sim card) also filters this source
+  // player, so you can hear what suppression does. A high-pass currently; the
+  // real noise-suppression algorithm slots into this graph later.
+  function setSuppress(on) {
+    const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
+    if (!AC) return false;
+    if (!suppressGraph) {
+      const ctx = new AC();
+      const src = ctx.createMediaElementSource(audio);
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 120; // cut rumble / handling noise
+      const dest = ctx.destination;
+      src.connect(hp);
+      hp.connect(dest);
+      suppressGraph = { ctx, src, hp, dest };
+    }
+    const { src, hp, dest } = suppressGraph;
+    if (on) {
+      try { src.disconnect(); } catch { /* not connected */ }
+      src.connect(hp);
+      hp.connect(dest);
+    } else {
+      try { src.disconnect(); hp.disconnect(); } catch { /* not connected */ }
+      src.connect(dest);
+    }
+    return on;
+  }
+
   return {
+    setSuppress,
     loadSource(src) {
       audio.src = `/audio/${src.file}`;
       scrub.max = src.duration;
