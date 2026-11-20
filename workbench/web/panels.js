@@ -320,6 +320,12 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   const listenBtn = root.querySelector(".listen");
   const listenTxt = listenBtn.querySelector("span");
   const normBtn = root.querySelector(".norm");
+  // the button is the state: copy + color reflect it
+  const setNormBtn = () => {
+    normBtn.innerHTML = `${I.norm}<span>${normalize ? "Normalized" : "Normalize"}</span>`;
+    normBtn.classList.toggle("on", normalize);
+    normBtn.setAttribute("aria-pressed", String(normalize));
+  };
   const scrollBtn = root.querySelector(".scroll");
   const gear = root.querySelector(".gear");
   const trash = root.querySelector(".trash");
@@ -410,8 +416,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   trash.addEventListener("click", () => onClear());
   normBtn.addEventListener("click", () => {
     setNormalize(!normalize);
-    normBtn.classList.toggle("on", normalize);
-    normBtn.setAttribute("aria-pressed", String(normalize));
+    setNormBtn();
     try { globalThis.localStorage && localStorage.setItem("norm-" + model, normalize ? "1" : "0"); } catch { /* ignore */ }
   });
   scrollBtn.addEventListener("click", () => {
@@ -539,7 +544,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
 
   renderForm(); // last on purpose: a form-rendering error must never kill the listeners above
   setListenState();
-  normBtn.classList.toggle("on", normalize);
-  normBtn.setAttribute("aria-pressed", String(normalize));
+  setNormBtn(); // restore label/color from persisted filter state
   return { setState, setDrop, addLine, clear, setLines, setNormalize };
 }
