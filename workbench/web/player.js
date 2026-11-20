@@ -60,8 +60,9 @@ export function initSourcePlayer() {
 
   // One shared Suppress toggle (lives on the sim card) also filters this source
   // player, so you can hear what suppression does - works mid-playback too.
-  // Currently a band-pass (250 Hz - 3.4 kHz, like a cleaned-up speech channel);
-  // the real noise-suppression algorithm slots into this graph later.
+  // Audible chain: tight speech band (300 Hz - 3 kHz) + ducking compressor that
+  // squashes quiet background noise between words. The real NS algorithm slots
+  // into this graph later.
   function setSuppress(on) {
     const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AC) return false;
@@ -70,15 +71,22 @@ export function initSourcePlayer() {
       const src = ctx.createMediaElementSource(audio);
       const hp = ctx.createBiquadFilter();
       hp.type = "highpass";
-      hp.frequency.value = 250;
+      hp.frequency.value = 300;
       const lp = ctx.createBiquadFilter();
       lp.type = "lowpass";
-      lp.frequency.value = 3400;
+      lp.frequency.value = 3000;
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -24; // duck anything quieter than speech
+      comp.knee.value = 0;
+      comp.ratio.value = 12;
+      comp.attack.value = 0.003;
+      comp.release.value = 0.25;
       const dest = ctx.destination;
       src.connect(hp);
       hp.connect(lp);
-      lp.connect(dest);
-      suppressGraph = { ctx, src, hp, lp, dest };
+      lp.connect(comp);
+      comp.connect(dest);
+      suppressGraph = { ctx, src, hp, dest };
     }
     const g = suppressGraph;
     if (g.ctx.state === "suspended") g.ctx.resume(); // autoplay policy: must resume on the user gesture
