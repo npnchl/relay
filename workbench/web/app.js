@@ -62,6 +62,11 @@ function applyState(st) {
     shuffleBtn.hidden = selectValue !== "random";
   }
   simPlayer.applyState(st);
+  // suppress is locked while the sim runs (the denoiser is created at sim start)
+  suppressBtn.disabled = !!st.running;
+  suppressBtn.title = st.running
+    ? "Noise suppression is locked while the sim is running - toggle it before starting"
+    : "Noise suppression on the sim feed (real-time denoise) + audible filter on the source player";
   for (const m of ["A", "B"]) panels[m].setState(st);
 }
 
@@ -159,6 +164,7 @@ function setSuppressBtn() {
   suppressBtn.setAttribute("aria-pressed", String(suppress));
 }
 suppressBtn.addEventListener("click", () => {
+  if (suppressBtn.disabled) return; // locked while the sim is running
   suppress = !suppress;
   setSuppressBtn();
   sourcePlayer.setSuppress(suppress);
