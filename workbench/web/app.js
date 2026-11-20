@@ -10,6 +10,9 @@ const sourceSel = $("#source");
 const shuffleBtn = $("#shuffle");
 const conn = $("#conn");
 const connText = $("#conn-text");
+const normBtn = $("#normalize");
+
+let normalize = false;
 
 let manifest = null;
 let currentSource = null;
@@ -131,6 +134,10 @@ async function boot() {
     fillSources();
     makePanels();
     applyState(await getJSON("/state"));
+    // load transcripts already in backend memory so a reload keeps the view
+    const t = await getJSON("/transcripts");
+    for (const m of ["A", "B"]) panels[m].setLines(t.lines.filter((l) => l.model === m));
+    for (const m of ["A", "B"]) panels[m].setNormalize(normalize);
   } catch (e) {
     console.error("boot failed:", e);
     connText.textContent = "backend error - see console";
@@ -141,6 +148,15 @@ sourceSel.addEventListener("change", () => {
   selectValue = sourceSel.value;
   shuffleBtn.hidden = selectValue !== "random";
   postJSON("/source", { id: selectValue }).catch((e) => console.warn(e));
+});
+
+// one global toggle: both panels are re-segmented with the same rule so the
+// A/B comparison stays fair. Raw lines are untouched (view-only).
+normBtn.addEventListener("click", () => {
+  normalize = !normalize;
+  normBtn.classList.toggle("on", normalize);
+  normBtn.setAttribute("aria-pressed", String(normalize));
+  for (const m of ["A", "B"]) if (panels[m]) panels[m].setNormalize(normalize);
 });
 shuffleBtn.addEventListener("click", () => {
   selectValue = "random";

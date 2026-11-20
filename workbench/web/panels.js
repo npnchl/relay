@@ -246,6 +246,47 @@ function readForm(form, config) {
   return out;
 }
 
+// View-only normalization: re-segment the raw final lines into sentences with one
+// deterministic rule (split after . ! ? … followed by whitespace), merging fragments
+// across lines. Raw lines are never modified or persisted differently.
+// Timestamps: a sentence spanning lines takes t0 of its first line and t1 of its
+// last; a sentence split within one line is interpolated by character fraction.
+function normalizeLines(lines) {
+  const finals = lines.filter((l) => !l.partial).sort((a, b) => a.t0 - b.t0);
+  const out = [];
+  let carry = null; // {t0, text} fragment waiting for its sentence to end
+  for (const line of finals) {
+    const parts = line.text.split(/(?<=[.!?…])\s+/).filter((s) => s.trim());
+    if (!parts.length) continue;
+    const total = parts.reduce((s, p) => s + p.length, 0) || 1;
+    let off = 0;
+    parts.forEach((p, i) => {
+      const isLast = i === parts.length - 1;
+      const f0 = off / total;
+      const f1 = (off + p.length) / total;
+      let text = p;
+      let t0 = line.t0 + (line.t1 - line.t0) * f0;
+      if (i === 0 && carry) {
+        text = carry.text + " " + p;
+        t0 = carry.t0;
+      }
+      off += p.length;
+      const t1 = line.t0 + (line.t1 - line.t0) * f1;
+      if (isLast && !/[.!?…]\s*$/.test(p)) {
+        carry = { t0, text: text.trim() }; // no sentence end yet: merge with next line
+      } else {
+        out.push({ t0, t1, text: text.trim(), partial: false });
+        carry = null;
+      }
+    });
+  }
+  if (carry) {
+    const last = finals[finals.length - 1];
+    out.push({ t0: carry.t0, t1: last ? last.t1 : carry.t0, text: carry.text, partial: false });
+  }
+  return out;
+}
+
 export function createPanel(root, { model, label, schema, currentConfig, onJump, onListen, onClear }) {
   root.innerHTML = `
     <header class="panel-head">
@@ -264,6 +305,8 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     <div class="viewport" aria-live="polite" role="log"></div>`;
 
   const vp = root.querySelector(".viewport");
+  const lines = []; // raw lines in memory; normalize renders a derived copy of these
+  let normalize = false;
   const listenBtn = root.querySelector(".listen");
   const listenTxt = listenBtn.querySelector("span");
   const scrollBtn = root.querySelector(".scroll");
@@ -404,7 +447,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     listenBtn.title = text;
   }
 
-  function addLine(line) {
+  function makeLineEl(line) {
     const div = document.createElement("div");
     div.className = "line jump" + (line.partial ? " partial" : "");
     div.title = "Jump source player to this timestamp";
@@ -416,15 +459,47 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     txt.textContent = line.text;
     div.append(ts, txt);
     div.addEventListener("click", () => onJump(line.t0));
-    const last = vp.lastElementChild;
-    if (last && last.classList.contains("partial")) last.replaceWith(div);
-    else vp.appendChild(div);
+    return div;
+  }
+
+  function renderLines() {
+    vp.innerHTML = "";
+    let view;
+    if (normalize) {
+      view = normalizeLines(lines);
+      const lastPartial = [...lines].reverse().find((l) => l.partial);
+      if (lastPartial) view = [...view, lastPartial];
+    } else {
+      view = lines.filter((l) => !l.partial);
+      const lastPartial = [...lines].reverse().find((l) => l.partial);
+      if (lastPartial) view = [...view, lastPartial];
+    }
+    for (const line of view) vp.appendChild(makeLineEl(line));
     if (autoScroll) vp.scrollTop = vp.scrollHeight;
   }
 
-  function clear() { vp.innerHTML = ""; }
+  function addLine(line) {
+    lines.push(line);
+    renderLines();
+  }
+
+  function setLines(arr) {
+    lines.length = 0;
+    lines.push(...arr);
+    renderLines();
+  }
+
+  function setNormalize(on) {
+    normalize = !!on;
+    renderLines();
+  }
+
+  function clear() {
+    lines.length = 0;
+    vp.innerHTML = "";
+  }
 
   renderForm(); // last on purpose: a form-rendering error must never kill the listeners above
   setListenState();
-  return { setState, setDrop, addLine, clear };
+  return { setState, setDrop, addLine, clear, setLines, setNormalize };
 }
