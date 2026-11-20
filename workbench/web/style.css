@@ -122,13 +122,22 @@ select {
   padding: 7px 10px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  overflow-x: auto;   /* button stack scrolls horizontally instead of overflowing the panel */
-  overflow-y: hidden;
-  scrollbar-width: thin;
 }
-.panel-head .model-name,
-.panel-head .btn { flex-shrink: 0; }
-.model-name { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.panel-head .model-name { flex-shrink: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+/* only the button strip scrolls (when it overflows); the label stays fixed.
+   Scrollbar is hidden - scroll via trackpad/shift-wheel. */
+.head-actions {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.head-actions::-webkit-scrollbar { display: none; }
+.head-actions .btn { flex-shrink: 0; }
 .spacer { flex: 1 0 6px; }
 
 .viewport {

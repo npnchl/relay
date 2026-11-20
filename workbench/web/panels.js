@@ -292,12 +292,14 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   root.innerHTML = `
     <header class="panel-head">
       <span class="model-name">${label}</span>
-      <span class="spacer"></span>
-      <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
-      <button class="btn norm" aria-pressed="false" title="Re-segment this transcript into sentences (view only; raw output unchanged)">${I.norm}<span>Normalize</span></button>
-      <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">${I.scroll}<span>Auto-scroll</span></button>
-      <button class="btn gear" title="Settings for ${label}">${I.gear}<span>Settings</span></button>
-      <button class="btn trash" title="Clear transcript ${model}">${I.trash}<span>Clear</span></button>
+      <div class="head-actions">
+        <span class="spacer"></span>
+        <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
+        <button class="btn norm" aria-pressed="false" title="Re-segment this transcript into sentences (view only; raw output unchanged)">${I.norm}<span>Normalize</span></button>
+        <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">${I.scroll}<span>Auto-scroll</span></button>
+        <button class="btn trash" title="Clear transcript ${model}">${I.trash}<span>Clear</span></button>
+        <button class="btn gear" title="Settings for ${label}">${I.gear}<span>Settings</span></button>
+      </div>
     </header>
     <div class="popover" hidden>
       <div class="pop-title">${label} settings</div>
