@@ -13,6 +13,22 @@ const I = {
 
 const MELIA1_FORBIDDEN = ["max_delay", "max_delay_mode", "punctuation_overrides", "transcript_filtering_config"];
 
+// Two-tier settings: CORE = top-level fields that affect transcription output and
+// stay visible in the main section; everything else lives under "All provider
+// options" (collapsed). Everything the SDK exposes is still reachable.
+const CORE = {
+  A: new Set([
+    "language", "model", "operating_point", "enable_partials",
+    "max_delay", "max_delay_mode", "diarization", "speaker_diarization_config",
+    "additional_vocab", "punctuation_overrides", "domain", "output_locale",
+  ]),
+  B: new Set([
+    "encoding", "bit_depth", "sample_rate", "channels", "model",
+    "endpointing", "maximum_duration_without_endpointing", "custom_metadata",
+    "language_config", "pre_processing", "messages_config",
+  ]),
+};
+
 function getPath(obj, path) {
   return path.split(".").reduce((o, k) => (o == null ? o : o[k]), obj);
 }
@@ -178,15 +194,18 @@ function buildField(container, name, spec, config, path) {
   return wrap;
 }
 
-function buildFields(container, fields, config, prefix) {
+function buildFields(container, fields, config, prefix, mode, core) {
   for (const [name, spec] of Object.entries(fields)) {
     const path = prefix ? `${prefix}.${name}` : name;
+    // tier split applies at the top level only; nested objects stay whole
+    if (!prefix && mode === "core" && !core.has(name)) continue;
+    if (!prefix && mode === "all" && core.has(name)) continue;
     if (spec.type === "object" && spec.fields) {
       const det = document.createElement("details");
       const sum = document.createElement("summary");
       sum.textContent = name;
       det.appendChild(sum);
-      buildFields(det, spec.fields, config, path);
+      buildFields(det, spec.fields, config, path, mode, core);
       container.appendChild(det);
     } else {
       buildField(container, name, spec, config, path);
@@ -265,10 +284,20 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     main.className = "sec";
     const t = document.createElement("div");
     t.className = "sec-title";
-    t.textContent = "Main";
+    t.textContent = "Core";
     main.appendChild(t);
     form.appendChild(main);
-    buildFields(main, schema.fields, currentConfig, "");
+    buildFields(main, schema.fields, currentConfig, "", "core", CORE[model]);
+    const adv = document.createElement("details");
+    adv.className = "sec-adv";
+    const sum = document.createElement("summary");
+    sum.textContent = "All provider options";
+    adv.appendChild(sum);
+    const advSec = document.createElement("section");
+    advSec.className = "sec";
+    adv.appendChild(advSec);
+    buildFields(advSec, schema.fields, currentConfig, "", "all", CORE[model]);
+    form.appendChild(adv);
     syncEnhancedDisabled();
   }
 

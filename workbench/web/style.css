@@ -165,6 +165,20 @@ select {
 .form details { border-left: 2px solid var(--border); padding-left: 10px; }
 .form details summary { cursor: pointer; font-size: 12px; color: var(--muted-fg); font-weight: 600; }
 .form section.sec > .sec-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-fg); margin-bottom: 6px; }
+.form details.sec-adv {
+  margin-top: 4px;
+  padding-top: 8px;
+  padding-left: 0;
+  border-left: none;
+  border-top: 1px solid var(--border);
+}
+.form details.sec-adv > summary {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-fg);
+}
 .field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
 .field .flabel { font-size: 12px; color: var(--fg); font-weight: 600; }
 .field .fhelp { font-size: 11px; color: var(--muted-fg); }
