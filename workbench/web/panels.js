@@ -247,43 +247,34 @@ function readForm(form, config) {
   return out;
 }
 
-// View-only normalization: re-segment the raw final lines into sentences with one
-// deterministic rule (split after . ! ? … followed by whitespace), merging fragments
-// across lines. Raw lines are never modified or persisted differently.
-// Timestamps: a sentence spanning lines takes t0 of its first line and t1 of its
-// last; a sentence split within one line is interpolated by character fraction.
+// View-only normalization - SPLIT ONLY, never merges or moves text between
+// provider lines. Rule: each raw line is broken into new lines after sentence
+// punctuation (. ! ? …) and after commas. Text, wording and order are unchanged;
+// only line breaks are inserted. Timestamps are interpolated within the source
+// line by character fraction. Toggling the filter re-renders from the raw lines,
+// so switching it off always restores the original blocks exactly.
 function normalizeLines(lines) {
   const finals = lines.filter((l) => !l.partial).sort((a, b) => a.t0 - b.t0);
   const out = [];
-  let carry = null; // {t0, text} fragment waiting for its sentence to end
   for (const line of finals) {
-    const parts = line.text.split(/(?<=[.!?…])\s+/).filter((s) => s.trim());
-    if (!parts.length) continue;
+    const parts = line.text.split(/(?<=[.!?…,])\s+/).filter((s) => s.trim());
+    if (parts.length <= 1) {
+      out.push({ t0: line.t0, t1: line.t1, text: line.text, partial: false });
+      continue;
+    }
     const total = parts.reduce((s, p) => s + p.length, 0) || 1;
     let off = 0;
-    parts.forEach((p, i) => {
-      const isLast = i === parts.length - 1;
+    for (const p of parts) {
       const f0 = off / total;
       const f1 = (off + p.length) / total;
-      let text = p;
-      let t0 = line.t0 + (line.t1 - line.t0) * f0;
-      if (i === 0 && carry) {
-        text = carry.text + " " + p;
-        t0 = carry.t0;
-      }
+      out.push({
+        t0: line.t0 + (line.t1 - line.t0) * f0,
+        t1: line.t0 + (line.t1 - line.t0) * f1,
+        text: p.trim(),
+        partial: false,
+      });
       off += p.length;
-      const t1 = line.t0 + (line.t1 - line.t0) * f1;
-      if (isLast && !/[.!?…]\s*$/.test(p)) {
-        carry = { t0, text: text.trim() }; // no sentence end yet: merge with next line
-      } else {
-        out.push({ t0, t1, text: text.trim(), partial: false });
-        carry = null;
-      }
-    });
-  }
-  if (carry) {
-    const last = finals[finals.length - 1];
-    out.push({ t0: carry.t0, t1: last ? last.t1 : carry.t0, text: carry.text, partial: false });
+    }
   }
   return out;
 }
@@ -295,7 +286,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
       <div class="head-actions">
         <span class="spacer"></span>
         <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
-        <button class="btn norm" aria-pressed="false" title="Re-segment this transcript into sentences (view only; raw output unchanged)">${I.norm}<span>Normalize</span></button>
+        <button class="btn norm" aria-pressed="false" title="Normalize (view-only filter): splits each line into shorter lines after full stops and commas. Text and order never change; raw blocks restored when toggled off.">${I.norm}<span>Normalize</span></button>
         <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">${I.scroll}<span>Auto-scroll</span></button>
         <button class="btn trash" title="Clear transcript ${model}">${I.trash}<span>Clear</span></button>
         <button class="btn gear" title="Settings for ${label}">${I.gear}<span>Settings</span></button>
