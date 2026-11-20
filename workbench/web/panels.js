@@ -292,7 +292,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   root.innerHTML = `
     <header class="panel-head">
       <span class="model-name">${label}</span>
-      <span class="norm-tag" hidden>normalized</span>
       <div class="head-actions">
         <span class="spacer"></span>
         <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
@@ -310,7 +309,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     <div class="viewport" aria-live="polite" role="log"></div>`;
 
   const vp = root.querySelector(".viewport");
-  const normTag = root.querySelector(".norm-tag");
   const lines = []; // raw lines in memory; normalize renders a derived copy of these
   // filter state: fully on or fully off, applies to existing AND incoming lines,
   // independent of whether the sim is running; persisted across reloads
@@ -414,7 +412,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     setNormalize(!normalize);
     normBtn.classList.toggle("on", normalize);
     normBtn.setAttribute("aria-pressed", String(normalize));
-    normTag.hidden = !normalize;
     try { globalThis.localStorage && localStorage.setItem("norm-" + model, normalize ? "1" : "0"); } catch { /* ignore */ }
   });
   scrollBtn.addEventListener("click", () => {
@@ -542,7 +539,6 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
 
   renderForm(); // last on purpose: a form-rendering error must never kill the listeners above
   setListenState();
-  normTag.hidden = !normalize;
   normBtn.classList.toggle("on", normalize);
   normBtn.setAttribute("aria-pressed", String(normalize));
   return { setState, setDrop, addLine, clear, setLines, setNormalize };
