@@ -59,8 +59,9 @@ export function initSourcePlayer() {
   });
 
   // One shared Suppress toggle (lives on the sim card) also filters this source
-  // player, so you can hear what suppression does. A high-pass currently; the
-  // real noise-suppression algorithm slots into this graph later.
+  // player, so you can hear what suppression does - works mid-playback too.
+  // Currently a band-pass (250 Hz - 3.4 kHz, like a cleaned-up speech channel);
+  // the real noise-suppression algorithm slots into this graph later.
   function setSuppress(on) {
     const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!AC) return false;
@@ -69,21 +70,21 @@ export function initSourcePlayer() {
       const src = ctx.createMediaElementSource(audio);
       const hp = ctx.createBiquadFilter();
       hp.type = "highpass";
-      hp.frequency.value = 120; // cut rumble / handling noise
+      hp.frequency.value = 250;
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 3400;
       const dest = ctx.destination;
       src.connect(hp);
-      hp.connect(dest);
-      suppressGraph = { ctx, src, hp, dest };
+      hp.connect(lp);
+      lp.connect(dest);
+      suppressGraph = { ctx, src, hp, lp, dest };
     }
-    const { src, hp, dest } = suppressGraph;
-    if (on) {
-      try { src.disconnect(); } catch { /* not connected */ }
-      src.connect(hp);
-      hp.connect(dest);
-    } else {
-      try { src.disconnect(); hp.disconnect(); } catch { /* not connected */ }
-      src.connect(dest);
-    }
+    const g = suppressGraph;
+    if (g.ctx.state === "suspended") g.ctx.resume(); // autoplay policy: must resume on the user gesture
+    try { g.src.disconnect(); } catch { /* not connected */ }
+    if (on) g.src.connect(g.hp); // through the filter chain
+    else g.src.connect(g.dest); // bypass
     return on;
   }
 

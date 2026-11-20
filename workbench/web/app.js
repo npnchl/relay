@@ -147,16 +147,25 @@ sourceSel.addEventListener("change", () => {
 });
 
 // one shared Suppress toggle on the sim card: filters the source player audio
-// immediately AND flags the sim stream on the backend (sim-side DSP pending)
+// (audible immediately, works mid-playback) AND flags the sim stream on the
+// backend (sim-side DSP pending). The button holds the state: Suppress/Suppressing.
 const suppressBtn = $("#sim-suppress");
+const srcSuppressTag = $("#src-suppress");
+const SUPPRESS_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 12h3l2-7 4 14 2-7h7"/></svg>';
 let suppress = false;
-suppressBtn.addEventListener("click", () => {
-  suppress = !suppress;
+function setSuppressBtn() {
+  suppressBtn.innerHTML = `${SUPPRESS_ICON}<span>${suppress ? "Suppressing" : "Suppress"}</span>`;
   suppressBtn.classList.toggle("on", suppress);
   suppressBtn.setAttribute("aria-pressed", String(suppress));
+}
+suppressBtn.addEventListener("click", () => {
+  suppress = !suppress;
+  setSuppressBtn();
   sourcePlayer.setSuppress(suppress);
+  srcSuppressTag.hidden = !suppress;
   postJSON("/sim/suppress", { on: suppress }).catch((e) => console.warn(e));
 });
+setSuppressBtn();
 shuffleBtn.addEventListener("click", () => {
   selectValue = "random";
   sourceSel.value = "random";
