@@ -7,6 +7,7 @@ const I = {
   stop: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
   alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
   scroll: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m8 9 4-4 4 4"/><path d="m8 15 4 4 4-4"/></svg>',
+  norm: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
   gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
 };
@@ -293,6 +294,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
       <span class="model-name">${label}</span>
       <span class="spacer"></span>
       <button class="btn listen" aria-pressed="false">${I.play}<span>Listen</span></button>
+      <button class="btn norm" aria-pressed="false" title="Re-segment this transcript into sentences (view only; raw output unchanged)">${I.norm}<span>Normalize</span></button>
       <button class="btn scroll on" aria-pressed="true" title="Auto-scroll transcript">${I.scroll}<span>Auto-scroll</span></button>
       <button class="btn gear" title="Settings for ${label}">${I.gear}<span>Settings</span></button>
       <button class="btn trash" title="Clear transcript ${model}">${I.trash}<span>Clear</span></button>
@@ -309,6 +311,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   let normalize = false;
   const listenBtn = root.querySelector(".listen");
   const listenTxt = listenBtn.querySelector("span");
+  const normBtn = root.querySelector(".norm");
   const scrollBtn = root.querySelector(".scroll");
   const gear = root.querySelector(".gear");
   const trash = root.querySelector(".trash");
@@ -397,6 +400,11 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
     onListen(listening);
   });
   trash.addEventListener("click", () => onClear());
+  normBtn.addEventListener("click", () => {
+    setNormalize(!normalize);
+    normBtn.classList.toggle("on", normalize);
+    normBtn.setAttribute("aria-pressed", String(normalize));
+  });
   scrollBtn.addEventListener("click", () => {
     autoScroll = !autoScroll;
     scrollBtn.classList.toggle("on", autoScroll);
