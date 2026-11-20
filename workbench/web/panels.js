@@ -322,7 +322,7 @@ export function createPanel(root, { model, label, schema, currentConfig, onJump,
   const normBtn = root.querySelector(".norm");
   // the button is the state: copy + color reflect it
   const setNormBtn = () => {
-    normBtn.innerHTML = `${I.norm}<span>${normalize ? "Normalized" : "Normalize"}</span>`;
+    normBtn.innerHTML = `${I.norm}<span>${normalize ? "Normalizing" : "Normalize"}</span>`;
     normBtn.classList.toggle("on", normalize);
     normBtn.setAttribute("aria-pressed", String(normalize));
   };
